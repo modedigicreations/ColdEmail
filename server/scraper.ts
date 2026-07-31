@@ -240,103 +240,105 @@ export async function scrapeLeadsGorilla(
     await page.click(submitBtnSelector);
 
     // 4. Wait for search results
-    console.log('Searching Google Places via Leads Gorilla... (this may take up to 90 seconds)');
-    const leadsSelector = 'table tbody tr, .lead-item, .card-body, .lead-card, .business-name';
-    await page.waitForSelector(leadsSelector, { timeout: 95000 });
+    console.log('Waiting for search to start...');
+    await page.waitForFunction(() => {
+      const btn = document.querySelector('#search-leads');
+      return btn && (btn.textContent || '').toLowerCase().includes('searching');
+    }, { timeout: 15000 }).catch(() => {
+      console.log('Search button did not transition to searching state, continuing...');
+    });
+
+    console.log('Searching Google Places via Leads Gorilla... (waiting up to 120 seconds for completion)');
+    await page.waitForFunction(() => {
+      const btn = document.querySelector('#search-leads');
+      if (!btn) return false;
+      const text = (btn.textContent || '').toLowerCase();
+      const isDisabled = btn.hasAttribute('disabled');
+      return text.includes('search') && !text.includes('searching') && !isDisabled;
+    }, { timeout: 120000 });
+
+    // Wait a brief moment for the DOM to settle rendering the results
+    await page.evaluate(() => new Promise(r => setTimeout(r, 1500)));
 
     // 5. Parse leads from DOM
-    console.log('Parsing search results table...');
+    console.log('Parsing search results from DOM...');
     const leads = await page.evaluate((keyword: string) => {
       const results: any[] = [];
-      const rows = Array.from(document.querySelectorAll('table tbody tr'));
+      const items = Array.from(document.querySelectorAll('#search-results .panel, #search-results .card, #search-results .lead, #search-results tr, #search-results .lead-item'));
 
-      if (rows.length > 0) {
-        for (const row of rows) {
-          const cells = Array.from(row.querySelectorAll('td'));
-          if (cells.length < 2) continue;
+      for (const item of items) {
+        // Business Name
+        const nameEl = item.querySelector('.business-name, .card-title, h3, h4, h5, strong, a.business-link');
+        const name = nameEl ? nameEl.textContent?.trim() : '';
+        if (!name || name.toLowerCase().includes('search') || name.toLowerCase().includes('actions') || name.length < 2) continue;
 
-          // Business Name
-          const nameEl = row.querySelector('.business-name, strong, a, h4');
-          const name = nameEl ? nameEl.textContent?.trim() : '';
-          if (!name || name.toLowerCase().includes('search') || name.toLowerCase().includes('actions')) continue;
+        // Website (find link that isn't a social media or system link)
+        const links = Array.from(item.querySelectorAll('a'));
+        const webLink = links.find(l => {
+          const href = l.getAttribute('href') || '';
+          const txt = (l.textContent || '').toLowerCase();
+          return href.startsWith('http') && 
+                 !href.includes('google.com') && 
+                 !href.includes('facebook.com') && 
+                 !href.includes('twitter.com') && 
+                 !href.includes('instagram.com') &&
+                 !href.includes('linkedin.com') &&
+                 !href.includes('leadsgorilla') &&
+                 !txt.includes('claim') &&
+                 !txt.includes('report');
+        });
+        const website = webLink ? webLink.getAttribute('href') : '';
 
-          // Website
-          const links = Array.from(row.querySelectorAll('a'));
-          const webLink = links.find(l => {
-            const href = l.getAttribute('href') || '';
-            return href.startsWith('http') && !href.includes('google.com') && !href.includes('facebook.com') && !href.includes('leadsgorilla');
-          });
-          const website = webLink ? webLink.getAttribute('href') : '';
-
-          // Email
-          const mailLink = links.find(l => (l.getAttribute('href') || '').startsWith('mailto:'));
-          let email = mailLink ? mailLink.getAttribute('href')?.replace('mailto:', '').trim() : '';
-          
-          if (!email) {
-            for (const cell of cells) {
-              const text = cell.textContent || '';
-              const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-              if (match) {
-                email = match[0];
-                break;
-              }
-            }
+        // Email
+        const mailLink = links.find(l => (l.getAttribute('href') || '').startsWith('mailto:'));
+        let email = mailLink ? mailLink.getAttribute('href')?.replace('mailto:', '').split('?')[0].trim() : '';
+        
+        if (!email) {
+          const text = item.textContent || '';
+          const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+          if (match) {
+            email = match[0];
           }
-
-          // Phone
-          const telLink = links.find(l => (l.getAttribute('href') || '').startsWith('tel:'));
-          const phone = telLink ? telLink.getAttribute('href')?.replace('tel:', '').trim() : '';
-
-          // SEO Issues
-          const seoIssues: string[] = [];
-          row.querySelectorAll('.badge-danger, .badge-warning, .issue-tag, span[style*="red"]').forEach(el => {
-            const txt = el.textContent?.trim();
-            if (txt && txt.length > 3) seoIssues.push(txt);
-          });
-
-          // GMB Rating / Score
-          const scoreEl = row.querySelector('.score-badge, .rating, .seo-score');
-          const seoScore = scoreEl ? parseInt(scoreEl.textContent || '50', 10) : 55;
-
-          results.push({
-            name,
-            email: email || undefined,
-            website: website || undefined,
-            phone: phone || undefined,
-            category: keyword,
-            seoScore: isNaN(seoScore) ? 55 : seoScore,
-            gmbRating: 4.2,
-            seoIssues: seoIssues.length > 0 ? seoIssues : ['Optimize Page Speed', 'Schema Markup Missing']
-          });
         }
-      }
 
-      // Card fallback if table layout not matched
-      if (results.length === 0) {
-        const cards = Array.from(document.querySelectorAll('.card, .lead-card, .lead-item'));
-        for (const card of cards) {
-          const nameEl = card.querySelector('h3, h4, h5, .card-title, strong');
-          const name = nameEl ? nameEl.textContent?.trim() : '';
-          if (!name) continue;
-
-          const links = Array.from(card.querySelectorAll('a'));
-          const webLink = links.find(l => {
-            const href = l.getAttribute('href') || '';
-            return href.startsWith('http') && !href.includes('google.com') && !href.includes('facebook.com');
-          });
-          const website = webLink ? webLink.getAttribute('href') : '';
-
-          const mailLink = links.find(l => (l.getAttribute('href') || '').startsWith('mailto:'));
-          const email = mailLink ? mailLink.getAttribute('href')?.replace('mailto:', '').trim() : '';
-
-          results.push({
-            name,
-            email: email || undefined,
-            website: website || undefined,
-            category: keyword,
-            seoIssues: ['Page Speed Optimization', 'Schema Markup Missing']
-          });
+        // Phone
+        const telLink = links.find(l => (l.getAttribute('href') || '').startsWith('tel:'));
+        let phone = telLink ? telLink.getAttribute('href')?.replace('tel:', '').trim() : '';
+        if (!phone) {
+          const text = item.textContent || '';
+          const match = text.match(/\+?[0-9\s\-()]{7,20}/);
+          if (match && match[0].replace(/[^0-9]/g, '').length >= 7) {
+            phone = match[0].trim();
+          }
         }
+
+        // SEO Issues
+        const seoIssues: string[] = [];
+        item.querySelectorAll('.badge-danger, .badge-warning, .issue-tag, span[style*="red"], .alert-danger').forEach(el => {
+          const txt = el.textContent?.trim();
+          if (txt && txt.length > 2 && !seoIssues.includes(txt)) {
+            seoIssues.push(txt);
+          }
+        });
+
+        // GMB Rating
+        const ratingEl = item.querySelector('.rating, .stars, [class*="star" i]');
+        const ratingText = ratingEl ? ratingEl.textContent?.trim() : '';
+        const gmbRating = parseFloat(ratingText || '4.0');
+
+        // Prevent duplicate entries in results list
+        if (results.some(r => r.name === name)) continue;
+
+        results.push({
+          name,
+          email: email || undefined,
+          website: website || undefined,
+          phone: phone || undefined,
+          category: keyword,
+          seoScore: 65,
+          gmbRating: isNaN(gmbRating) ? 4.0 : gmbRating,
+          seoIssues: seoIssues.length > 0 ? seoIssues : ['Optimize Page Speed', 'Schema Markup Missing']
+        });
       }
 
       return results;
