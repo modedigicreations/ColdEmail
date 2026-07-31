@@ -173,6 +173,32 @@ function logDebug(message: string) {
   }
 }
 
+// Fetch coordinates for a location to mock Google Maps places autocomplete object
+async function getCoordinates(location: string): Promise<{ lat: number; lng: number }> {
+  try {
+    const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location)}`, {
+      headers: { 'User-Agent': 'ColdReachAgent/1.0' }
+    });
+    if (res.data && res.data.length > 0) {
+      return {
+        lat: parseFloat(res.data[0].lat),
+        lng: parseFloat(res.data[0].lon)
+      };
+    }
+  } catch (err: any) {
+    logDebug(`Failed to get coordinates from Nominatim: ${err.message}`);
+  }
+  
+  // Default fallbacks for common search locations
+  const locLower = location.toLowerCase();
+  if (locLower.includes('london')) return { lat: 51.5074, lng: -0.1278 };
+  if (locLower.includes('new york')) return { lat: 40.7128, lng: -74.0060 };
+  if (locLower.includes('lagos')) return { lat: 6.5244, lng: 3.3792 };
+  if (locLower.includes('abuja')) return { lat: 9.0765, lng: 7.3986 };
+  
+  return { lat: 51.5074, lng: -0.1278 }; // Default fallback
+}
+
 // Automated browser scraper for Leads Gorilla (exploratory / adaptive browser flow)
 export async function scrapeLeadsGorilla(
   credentials: { email: string; pass: string },
@@ -245,25 +271,28 @@ export async function scrapeLeadsGorilla(
     await page.keyboard.press('Backspace');
     await page.type(keywordSelector, searchParams.keyword);
 
-    // Clear and type location (slowly to trigger Google autocomplete)
+    // Clear and type location
     await page.click(locationSelector, { clickCount: 3 });
     await page.keyboard.press('Backspace');
-    await page.type(locationSelector, searchParams.location, { delay: 150 });
+    await page.type(locationSelector, searchParams.location);
 
-    // Wait for the Google Places Autocomplete dropdown (.pac-container)
-    logDebug('Waiting for autocomplete dropdown...');
-    try {
-      await page.waitForSelector('.pac-container .pac-item', { visible: true, timeout: 6000 });
-      logDebug('Autocomplete suggestion found, clicking it...');
-      await page.click('.pac-container .pac-item');
-      await page.evaluate(() => new Promise(r => setTimeout(r, 800)));
-    } catch (e: any) {
-      logDebug('Autocomplete pac-item not found/visible; trying fallback keyboard arrow selection...');
-      await page.keyboard.press('ArrowDown');
-      await page.evaluate(() => new Promise(r => setTimeout(r, 300)));
-      await page.keyboard.press('Enter');
-      await page.evaluate(() => new Promise(r => setTimeout(r, 800)));
-    }
+    // Fetch coordinates and inject mock autocompleteObject
+    const coords = await getCoordinates(searchParams.location);
+    logDebug(`Injecting autocomplete mock coordinates for ${searchParams.location}: lat=${coords.lat}, lng=${coords.lng}`);
+    await page.evaluate((coords: { lat: number; lng: number }) => {
+      (window as any).autocompleteObject = {
+        getPlace: () => ({
+          geometry: {
+            viewport: {
+              getCenter: () => ({
+                lat: () => coords.lat,
+                lng: () => coords.lng
+              })
+            }
+          }
+        })
+      };
+    }, coords);
 
     // Change button type to 'button' to prevent form submission page reloads
     await page.evaluate(() => {
