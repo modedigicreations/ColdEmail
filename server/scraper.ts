@@ -158,12 +158,37 @@ export function parseLeadsGorillaCSV(csvContent: string): any[] {
   return leads;
 }
 
+// Define debug logging function that also writes to a log file
+function logDebug(message: string) {
+  const logMsg = `[${new Date().toISOString()}] ${message}\n`;
+  console.log(message);
+  try {
+    const debugDir = path.join(__dirname, 'debug');
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+    fs.appendFileSync(path.join(debugDir, 'debug.log'), logMsg);
+  } catch (err) {
+    // Ignore log errors
+  }
+}
+
 // Automated browser scraper for Leads Gorilla (exploratory / adaptive browser flow)
 export async function scrapeLeadsGorilla(
   credentials: { email: string; pass: string },
   searchParams: { keyword: string; location: string }
 ): Promise<any[]> {
-  console.log(`Starting automated scraper for search: ${searchParams.keyword} in ${searchParams.location}`);
+  logDebug(`Starting automated scraper for search: ${searchParams.keyword} in ${searchParams.location}`);
+  
+  // Clear any existing debug logs
+  try {
+    const debugDir = path.join(__dirname, 'debug');
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(debugDir, 'debug.log'), '');
+  } catch (err) {}
+
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
@@ -175,17 +200,19 @@ export async function scrapeLeadsGorilla(
     await page.setViewport({ width: 1280, height: 800 });
 
     // 1. Go to Leads Gorilla login page
-    await page.goto('https://app.leadsgorilla.io/login', { waitUntil: 'load', timeout: 30000 });
+    logDebug('Navigating to Leads Gorilla login page...');
+    await page.goto('https://app.leadsgorilla.io/login', { waitUntil: 'load', timeout: 35000 });
     
     // Fill credentials using correct selectors
-    await page.waitForSelector('#user-name', { timeout: 10000 });
+    await page.waitForSelector('#user-name', { timeout: 15000 });
     await page.type('#user-name', credentials.email);
     await page.type('#user-password', credentials.pass);
     await page.click('button[type="submit"]');
 
     // Wait for dashboard navigation
+    logDebug('Waiting for login redirect...');
     try {
-      await page.waitForNavigation({ waitUntil: 'load', timeout: 20000 });
+      await page.waitForNavigation({ waitUntil: 'load', timeout: 25000 });
     } catch (e) {
       if (page.url().includes('login')) {
         throw new Error('Login failed. Please verify your Leads Gorilla credentials.');
@@ -198,7 +225,7 @@ export async function scrapeLeadsGorilla(
     }
 
     // 2. Go to search page
-    console.log('Navigating to Leads Gorilla search page...');
+    logDebug('Navigating to Leads Gorilla search page...');
     await page.goto('https://app.leadsgorilla.io/search', { waitUntil: 'load', timeout: 35000 });
     
     // Wait for verified input elements
@@ -206,12 +233,12 @@ export async function scrapeLeadsGorilla(
     const locationSelector = '#location';
     const submitBtnSelector = '#search-leads';
     
-    await page.waitForSelector(keywordSelector, { timeout: 20000 });
-    await page.waitForSelector(locationSelector, { timeout: 20000 });
-    await page.waitForSelector(submitBtnSelector, { timeout: 20000 });
+    await page.waitForSelector(keywordSelector, { timeout: 25000 });
+    await page.waitForSelector(locationSelector, { timeout: 25000 });
+    await page.waitForSelector(submitBtnSelector, { timeout: 25000 });
 
     // 3. Fill search criteria
-    console.log('Filling search criteria...');
+    logDebug('Filling search criteria...');
     
     // Clear and type keyword
     await page.click(keywordSelector, { clickCount: 3 });
@@ -221,40 +248,48 @@ export async function scrapeLeadsGorilla(
     // Clear and type location (slowly to trigger Google autocomplete)
     await page.click(locationSelector, { clickCount: 3 });
     await page.keyboard.press('Backspace');
-    await page.type(locationSelector, searchParams.location, { delay: 100 });
+    await page.type(locationSelector, searchParams.location, { delay: 150 });
 
     // Wait for the Google Places Autocomplete dropdown (.pac-container)
-    console.log('Waiting for autocomplete dropdown...');
-    await page.waitForSelector('.pac-container', { timeout: 5000 }).catch(() => {
-      console.log('Autocomplete pac-container not found; continuing with typed location.');
+    logDebug('Waiting for autocomplete dropdown...');
+    try {
+      await page.waitForSelector('.pac-container .pac-item', { visible: true, timeout: 6000 });
+      logDebug('Autocomplete suggestion found, clicking it...');
+      await page.click('.pac-container .pac-item');
+      await page.evaluate(() => new Promise(r => setTimeout(r, 800)));
+    } catch (e: any) {
+      logDebug('Autocomplete pac-item not found/visible; trying fallback keyboard arrow selection...');
+      await page.keyboard.press('ArrowDown');
+      await page.evaluate(() => new Promise(r => setTimeout(r, 300)));
+      await page.keyboard.press('Enter');
+      await page.evaluate(() => new Promise(r => setTimeout(r, 800)));
+    }
+
+    // Change button type to 'button' to prevent form submission page reloads
+    await page.evaluate(() => {
+      const btn = document.querySelector('#search-leads');
+      if (btn) btn.setAttribute('type', 'button');
     });
 
-    // Select the first autocomplete option
-    await page.keyboard.press('ArrowDown');
-    await page.evaluate(() => new Promise(r => setTimeout(r, 200)));
-    await page.keyboard.press('Enter');
-    await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
-
     // Trigger Search
-    console.log('Submitting search form...');
+    logDebug('Submitting search form...');
     await page.click(submitBtnSelector);
 
     // 4. Wait for search results
-    console.log('Submitting search form...');
-    // Give browser a short moment to process click and create loader
-    await page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
+    logDebug('Giving browser a moment to process click and render loader...');
+    await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
 
-    console.log('Waiting for search loader to appear...');
+    logDebug('Waiting for search loader to appear...');
     const loaderSelector = '.Loader .loader, #search-results .loader';
     const loaderExists = await page.waitForSelector(loaderSelector, { timeout: 15000 }).then(() => true).catch(() => false);
     
     if (loaderExists) {
-      console.log('Search loader detected. Waiting for it to disappear (this indicates completion)...');
+      logDebug('Search loader detected. Waiting for it to disappear (this indicates completion)...');
       await page.waitForSelector(loaderSelector, { hidden: true, timeout: 150000 }).catch(() => {
-        console.log('Loader did not disappear in time, continuing parser anyway...');
+        logDebug('Loader did not disappear in time, continuing parser anyway...');
       });
     } else {
-      console.log('Search loader was not detected. Waiting for search button to be active/re-enabled...');
+      logDebug('Search loader was not detected. Waiting for search button to be active/re-enabled...');
       await page.waitForFunction(() => {
         const btn = document.querySelector('#search-leads');
         if (!btn) return false;
@@ -265,10 +300,10 @@ export async function scrapeLeadsGorilla(
     }
 
     // Wait a brief moment for the DOM to settle rendering the results
-    await page.evaluate(() => new Promise(r => setTimeout(r, 2500)));
+    await page.evaluate(() => new Promise(r => setTimeout(r, 3000)));
 
     // 5. Parse leads from DOM
-    console.log('Parsing search results from DOM...');
+    logDebug('Parsing search results from DOM...');
     const leads = await page.evaluate((keyword: string) => {
       const results: any[] = [];
       // Find all h4 elements inside the search-results section
@@ -359,7 +394,7 @@ export async function scrapeLeadsGorilla(
       return results;
     }, searchParams.keyword);
 
-    console.log(`Successfully scraped ${leads.length} real leads.`);
+    logDebug(`Successfully scraped ${leads.length} real leads.`);
     
     // Save success page screenshot for debugging
     try {
@@ -369,15 +404,16 @@ export async function scrapeLeadsGorilla(
       }
       await page.screenshot({ path: path.join(debugDir, 'success.png') });
       fs.writeFileSync(path.join(debugDir, 'success.html'), await page.content());
-      console.log('Saved success debug screenshot and HTML source to server/dist/debug/');
+      logDebug('Saved success debug screenshot and HTML source to server/dist/debug/');
     } catch (debugError: any) {
-      console.error('Failed to save success debug info:', debugError.message);
+      logDebug(`Failed to save success debug info: ${debugError.message}`);
     }
 
     await browser.close();
     return leads;
 
   } catch (error: any) {
+    logDebug(`Puppeteer scraping failed with error: ${error.message}`);
     if (page) {
       try {
         const debugDir = path.join(__dirname, 'debug');
@@ -386,13 +422,12 @@ export async function scrapeLeadsGorilla(
         }
         await page.screenshot({ path: path.join(debugDir, 'error.png') });
         fs.writeFileSync(path.join(debugDir, 'error.html'), await page.content());
-        console.log('Saved debug screenshot and HTML source to server/dist/debug/');
+        logDebug('Saved debug screenshot and HTML source to server/dist/debug/');
       } catch (debugError: any) {
-        console.error('Failed to save debug info:', debugError.message);
+        logDebug(`Failed to save debug info: ${debugError.message}`);
       }
     }
     await browser.close();
-    console.error('Puppeteer scraping failed:', error.message);
     throw error;
   }
 }
