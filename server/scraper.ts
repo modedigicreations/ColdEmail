@@ -197,11 +197,15 @@ export async function scrapeLeadsGorilla(
       throw new Error('Login failed. Please verify your Leads Gorilla credentials.');
     }
 
-    // DEBUG: Capture logged-in dashboard and throw error to display screenshot
+    // DEBUG: Go to search page and capture screenshot
+    console.log('Navigating to https://app.leadsgorilla.io/search...');
+    await page.goto('https://app.leadsgorilla.io/search', { waitUntil: 'load', timeout: 30000 });
+    await page.waitForSelector('input', { timeout: 10000 }).catch(() => {});
+    
     if (!fs.existsSync(path.join(__dirname, 'debug'))) fs.mkdirSync(path.join(__dirname, 'debug'));
     await page.screenshot({ path: path.join(__dirname, 'debug', 'error.png') });
     fs.writeFileSync(path.join(__dirname, 'debug', 'error.html'), await page.content());
-    throw new Error('DEBUG_DASHBOARD: Capturing logged-in dashboard. Please check /debug/error.png');
+    throw new Error('DEBUG_SEARCH: Capturing search page. Please check /debug/error.png');
 
     // 2. Navigate to search page (Try common paths or find via links)
     console.log('Authenticated successfully. Locating search page...');
