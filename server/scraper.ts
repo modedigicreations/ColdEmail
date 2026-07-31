@@ -170,9 +170,9 @@ export async function scrapeLeadsGorilla(
     // 1. Go to Leads Gorilla login page
     await page.goto('https://app.leadsgorilla.io/login', { waitUntil: 'networkidle2' });
     
-    // Fill credentials
-    await page.type('#email', credentials.email);
-    await page.type('#password', credentials.pass);
+    // Fill credentials using correct selectors
+    await page.type('#user-name', credentials.email);
+    await page.type('#user-password', credentials.pass);
     await page.click('button[type="submit"]');
 
     // Wait for dashboard or error
