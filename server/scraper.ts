@@ -343,6 +343,20 @@ export async function scrapeLeadsGorilla(
     }, searchParams.keyword);
 
     console.log(`Successfully scraped ${leads.length} real leads.`);
+    
+    // Save success page screenshot for debugging
+    try {
+      const debugDir = path.join(__dirname, 'debug');
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+      await page.screenshot({ path: path.join(debugDir, 'success.png') });
+      fs.writeFileSync(path.join(debugDir, 'success.html'), await page.content());
+      console.log('Saved success debug screenshot and HTML source to server/dist/debug/');
+    } catch (debugError: any) {
+      console.error('Failed to save success debug info:', debugError.message);
+    }
+
     await browser.close();
     return leads;
 
