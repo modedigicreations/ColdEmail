@@ -175,12 +175,19 @@ export async function scrapeLeadsGorilla(
     await page.type('#user-password', credentials.pass);
     await page.click('button[type="submit"]');
 
-    // Wait for dashboard or error
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+    // Wait for dashboard navigation
+    try {
+      await page.waitForNavigation({ waitUntil: 'load', timeout: 20000 });
+    } catch (e) {
+      // If it timed out, verify if we navigated away from the login page
+      if (page.url().includes('login')) {
+        throw new Error('Login failed. Please verify your Leads Gorilla credentials.');
+      }
+    }
     
     // Check if login succeeded
     if (page.url().includes('login')) {
-      throw new Error('Login failed. Please check your Leads Gorilla credentials.');
+      throw new Error('Login failed. Please verify your Leads Gorilla credentials.');
     }
 
     const leads: any[] = [];
