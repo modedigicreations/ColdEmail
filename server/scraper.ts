@@ -197,77 +197,52 @@ export async function scrapeLeadsGorilla(
       throw new Error('Login failed. Please verify your Leads Gorilla credentials.');
     }
 
-    // DEBUG: Go to search page and capture screenshot
-    console.log('Navigating to https://app.leadsgorilla.io/search...');
-    await page.goto('https://app.leadsgorilla.io/search', { waitUntil: 'load', timeout: 30000 });
-    await page.waitForSelector('input', { timeout: 10000 }).catch(() => {});
+    // 2. Go to search page
+    console.log('Navigating to Leads Gorilla search page...');
+    await page.goto('https://app.leadsgorilla.io/search', { waitUntil: 'load', timeout: 35000 });
     
-    if (!fs.existsSync(path.join(__dirname, 'debug'))) fs.mkdirSync(path.join(__dirname, 'debug'));
-    await page.screenshot({ path: path.join(__dirname, 'debug', 'error.png') });
-    fs.writeFileSync(path.join(__dirname, 'debug', 'error.html'), await page.content());
-    throw new Error('DEBUG_SEARCH: Capturing search page. Please check /debug/error.png');
+    // Wait for verified input elements
+    const keywordSelector = '#keyword-input';
+    const locationSelector = '#location';
+    const submitBtnSelector = '#search-leads';
+    
+    await page.waitForSelector(keywordSelector, { timeout: 20000 });
+    await page.waitForSelector(locationSelector, { timeout: 20000 });
+    await page.waitForSelector(submitBtnSelector, { timeout: 20000 });
 
-    // 2. Navigate to search page (Try common paths or find via links)
-    console.log('Authenticated successfully. Locating search page...');
-    const searchUrl = 'https://app.leadsgorilla.io/leads/google';
-    await page.goto(searchUrl, { waitUntil: 'load', timeout: 25000 }).catch(() => {});
-
-    // If inputs not found on this page, look in the DOM for links
-    let hasKeywordInput = await page.$('input[placeholder*="keyword" i], input[name*="keyword" i], #keyword') !== null;
-    if (!hasKeywordInput) {
-      console.log('Direct URL did not contain keyword inputs. Scanning sidebar links...');
-      const searchLink = await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a'));
-        const target = links.find(l => {
-          const text = (l.textContent || '').toLowerCase();
-          const href = (l.getAttribute('href') || '').toLowerCase();
-          return text.includes('find leads') || text.includes('google leads') || text.includes('local search') || href.includes('search') || href.includes('find');
-        });
-        return target ? target.href : null;
-      });
-
-      if (searchLink) {
-        console.log('Navigating to dynamic search link:', searchLink);
-        await page.goto(searchLink, { waitUntil: 'load', timeout: 20000 }).catch(() => {});
-      }
-    }
-
-    // 3. Fill search parameters
+    // 3. Fill search criteria
     console.log('Filling search criteria...');
-    const keywordSelector = 'input[placeholder*="keyword" i], input[name*="keyword" i], input[placeholder*="search" i], #keyword';
-    await page.waitForSelector(keywordSelector, { timeout: 15000 });
-
-    const locationSelector = 'input[placeholder*="location" i], input[name*="location" i], input[placeholder*="city" i], #location';
-    await page.waitForSelector(locationSelector, { timeout: 15000 });
-
-    // Clear existing values if any and type
+    
+    // Clear and type keyword
     await page.click(keywordSelector, { clickCount: 3 });
+    await page.keyboard.press('Backspace');
     await page.type(keywordSelector, searchParams.keyword);
 
+    // Clear and type location (slowly to trigger Google autocomplete)
     await page.click(locationSelector, { clickCount: 3 });
-    await page.type(locationSelector, searchParams.location);
+    await page.keyboard.press('Backspace');
+    await page.type(locationSelector, searchParams.location, { delay: 100 });
+
+    // Wait for the Google Places Autocomplete dropdown (.pac-container)
+    console.log('Waiting for autocomplete dropdown...');
+    await page.waitForSelector('.pac-container', { timeout: 5000 }).catch(() => {
+      console.log('Autocomplete pac-container not found; continuing with typed location.');
+    });
+
+    // Select the first autocomplete option
+    await page.keyboard.press('ArrowDown');
+    await page.evaluate(() => new Promise(r => setTimeout(r, 200)));
+    await page.keyboard.press('Enter');
+    await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
 
     // Trigger Search
     console.log('Submitting search form...');
-    const submitBtnSelector = 'button[type="submit"], input[type="submit"]';
-    const clickSuccess = await page.evaluate(() => {
-      const btn = document.querySelector('button[type="submit"]') || 
-                  Array.from(document.querySelectorAll('button')).find(b => b.textContent?.toLowerCase().includes('search') || b.textContent?.toLowerCase().includes('find'));
-      if (btn) {
-        (btn as HTMLButtonElement).click();
-        return true;
-      }
-      return false;
-    });
-
-    if (!clickSuccess) {
-      await page.click(submitBtnSelector);
-    }
+    await page.click(submitBtnSelector);
 
     // 4. Wait for search results
-    console.log('Searching Google Places via Leads Gorilla... (this may take up to 45 seconds)');
+    console.log('Searching Google Places via Leads Gorilla... (this may take up to 90 seconds)');
     const leadsSelector = 'table tbody tr, .lead-item, .card-body, .lead-card, .business-name';
-    await page.waitForSelector(leadsSelector, { timeout: 60000 });
+    await page.waitForSelector(leadsSelector, { timeout: 95000 });
 
     // 5. Parse leads from DOM
     console.log('Parsing search results table...');
