@@ -173,30 +173,64 @@ function logDebug(message: string) {
   }
 }
 
+// Local dictionary of coordinates for popular target locations to avoid hitting Nominatim rate limits/blocks
+const LOCAL_COORDINATES: { [key: string]: { lat: number; lng: number } } = {
+  'london': { lat: 51.5074, lng: -0.1278 },
+  'new york': { lat: 40.7128, lng: -74.0060 },
+  'lagos': { lat: 6.5244, lng: 3.3792 },
+  'abuja': { lat: 9.0765, lng: 7.3986 },
+  'chicago': { lat: 41.8781, lng: -87.6298 },
+  'los angeles': { lat: 34.0522, lng: -118.2437 },
+  'toronto': { lat: 43.6532, lng: -79.3832 },
+  'sydney': { lat: -33.8688, lng: 151.2093 },
+  'houston': { lat: 29.7604, lng: -95.3698 },
+  'phoenix': { lat: 33.4484, lng: -112.0740 },
+  'philadelphia': { lat: 39.9526, lng: -75.1652 },
+  'san antonio': { lat: 29.4241, lng: -98.4936 },
+  'san diego': { lat: 32.7157, lng: -117.1611 },
+  'dallas': { lat: 32.7767, lng: -96.7970 },
+  'san jose': { lat: 37.3382, lng: -121.8863 },
+  'austin': { lat: 30.2672, lng: -97.7431 },
+  'jacksonville': { lat: 30.3322, lng: -81.6557 },
+  'fort worth': { lat: 32.7555, lng: -97.3308 },
+  'columbus': { lat: 39.9612, lng: -82.9988 },
+  'charlotte': { lat: 35.2271, lng: -80.8431 },
+  'san francisco': { lat: 37.7749, lng: -122.4194 }
+};
+
 // Fetch coordinates for a location to mock Google Maps places autocomplete object
 async function getCoordinates(location: string): Promise<{ lat: number; lng: number }> {
+  const query = location.trim().toLowerCase();
+  
+  // Try local dictionary first to ensure zero external API calls for common targets
+  for (const city of Object.keys(LOCAL_COORDINATES)) {
+    if (query.includes(city)) {
+      logDebug(`Matched local coordinates cache for ${location} -> ${city}`);
+      return LOCAL_COORDINATES[city];
+    }
+  }
+
+  // Fallback to OSM Nominatim API with rate limits
   try {
+    logDebug(`Querying Nominatim for location: ${location}`);
     const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location)}`, {
-      headers: { 'User-Agent': 'ColdReachAgent/1.0' }
+      headers: { 
+        'User-Agent': 'ColdReachAgent/2.0 (contact@modedigicreations.com)'
+      },
+      timeout: 5000
     });
     if (res.data && res.data.length > 0) {
-      return {
-        lat: parseFloat(res.data[0].lat),
-        lng: parseFloat(res.data[0].lon)
-      };
+      const lat = parseFloat(res.data[0].lat);
+      const lng = parseFloat(res.data[0].lon);
+      logDebug(`Nominatim resolved ${location} to lat=${lat}, lng=${lng}`);
+      return { lat, lng };
     }
   } catch (err: any) {
     logDebug(`Failed to get coordinates from Nominatim: ${err.message}`);
   }
   
-  // Default fallbacks for common search locations
-  const locLower = location.toLowerCase();
-  if (locLower.includes('london')) return { lat: 51.5074, lng: -0.1278 };
-  if (locLower.includes('new york')) return { lat: 40.7128, lng: -74.0060 };
-  if (locLower.includes('lagos')) return { lat: 6.5244, lng: 3.3792 };
-  if (locLower.includes('abuja')) return { lat: 9.0765, lng: 7.3986 };
-  
-  return { lat: 51.5074, lng: -0.1278 }; // Default fallback
+  logDebug(`Using default London coordinates fallback for ${location}`);
+  return { lat: 51.5074, lng: -0.1278 };
 }
 
 // Automated browser scraper for Leads Gorilla (exploratory / adaptive browser flow)
@@ -276,11 +310,11 @@ export async function scrapeLeadsGorilla(
     await page.keyboard.press('Backspace');
     await page.type(locationSelector, searchParams.location);
 
-    // Fetch coordinates and inject mock autocompleteObject
+    // Fetch coordinates and inject mock autocompleteObject (using string templates to prevent tsx/esbuild renaming)
     const coords = await getCoordinates(searchParams.location);
     logDebug(`Injecting autocomplete mock coordinates for ${searchParams.location}: lat=${coords.lat}, lng=${coords.lng}`);
-    await page.evaluate((coords: { lat: number; lng: number }) => {
-      (window as any).autocompleteObject = {
+    await page.evaluate(`(coords) => {
+      window.autocompleteObject = {
         getPlace: () => ({
           geometry: {
             viewport: {
@@ -292,13 +326,13 @@ export async function scrapeLeadsGorilla(
           }
         })
       };
-    }, coords);
+    }`, coords);
 
-    // Change button type to 'button' to prevent form submission page reloads
-    await page.evaluate(() => {
+    // Change button type to 'button' to prevent form submission page reloads (using string template)
+    await page.evaluate(`() => {
       const btn = document.querySelector('#search-leads');
       if (btn) btn.setAttribute('type', 'button');
-    });
+    }`);
 
     // Trigger Search
     logDebug('Submitting search form...');
@@ -306,7 +340,7 @@ export async function scrapeLeadsGorilla(
 
     // 4. Wait for search results
     logDebug('Giving browser a moment to process click and render loader...');
-    await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+    await page.evaluate('() => new Promise(r => setTimeout(r, 2000))');
 
     logDebug('Waiting for search loader to appear...');
     const loaderSelector = '.Loader .loader, #search-results .loader';
@@ -319,28 +353,28 @@ export async function scrapeLeadsGorilla(
       });
     } else {
       logDebug('Search loader was not detected. Waiting for search button to be active/re-enabled...');
-      await page.waitForFunction(() => {
+      await page.waitForFunction(`() => {
         const btn = document.querySelector('#search-leads');
         if (!btn) return false;
         const text = (btn.textContent || '').toLowerCase();
         const isDisabled = btn.hasAttribute('disabled');
         return text.includes('search') && !text.includes('searching') && !isDisabled;
-      }, { timeout: 120000 }).catch(() => {});
+      }`, { timeout: 120000 }).catch(() => {});
     }
 
     // Wait a brief moment for the DOM to settle rendering the results
-    await page.evaluate(() => new Promise(r => setTimeout(r, 3000)));
+    await page.evaluate('() => new Promise(r => setTimeout(r, 3000))');
 
-    // 5. Parse leads from DOM
+    // 5. Parse leads from DOM (using string template to prevent tsx/esbuild __name helper injection)
     logDebug('Parsing search results from DOM...');
-    const leads = await page.evaluate((keyword: string) => {
-      const results: any[] = [];
+    const leads = await page.evaluate(`(keyword) => {
+      const results = [];
       // Find all h4 elements inside the search-results section
       const h4Elements = Array.from(document.querySelectorAll('#search-results h4'));
 
       for (const h4 of h4Elements) {
         // Business Name is the text of the h4 (excluding child badges like Claimed/Unclaimed)
-        const clonedH4 = h4.cloneNode(true) as HTMLElement;
+        const clonedH4 = h4.cloneNode(true);
         clonedH4.querySelectorAll('.badge, span').forEach(el => el.remove());
         const name = clonedH4.textContent?.trim() || '';
         
@@ -370,11 +404,11 @@ export async function scrapeLeadsGorilla(
 
         // Email
         const mailLink = links.find(l => (l.getAttribute('href') || '').startsWith('mailto:'));
-        let email = mailLink ? mailLink.getAttribute('href')?.replace('mailto:', '').split('?')[0].trim() : '';
+        let email = mailLink ? mailLink.getAttribute('href').replace('mailto:', '').split('?')[0].trim() : '';
         
         if (!email) {
           const text = item.textContent || '';
-          const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+          const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/);
           if (match) {
             email = match[0];
           }
@@ -382,17 +416,17 @@ export async function scrapeLeadsGorilla(
 
         // Phone
         const telLink = links.find(l => (l.getAttribute('href') || '').startsWith('tel:'));
-        let phone = telLink ? telLink.getAttribute('href')?.replace('tel:', '').trim() : '';
+        let phone = telLink ? telLink.getAttribute('href').replace('tel:', '').trim() : '';
         if (!phone) {
           const text = item.textContent || '';
-          const match = text.match(/\+?[0-9\s\-()]{7,20}/);
+          const match = text.match(/\\+?[0-9\\s\\-()]{7,20}/);
           if (match && match[0].replace(/[^0-9]/g, '').length >= 7) {
             phone = match[0].trim();
           }
         }
 
         // SEO Issues
-        const seoIssues: string[] = [];
+        const seoIssues = [];
         item.querySelectorAll('.badge-danger, .badge-warning, .issue-tag, span[style*="red"], .alert-danger').forEach(el => {
           const txt = el.textContent?.trim();
           if (txt && txt.length > 2 && !seoIssues.includes(txt)) {
@@ -421,7 +455,7 @@ export async function scrapeLeadsGorilla(
       }
 
       return results;
-    }, searchParams.keyword);
+    }`, searchParams.keyword);
 
     logDebug(`Successfully scraped ${leads.length} real leads.`);
     
