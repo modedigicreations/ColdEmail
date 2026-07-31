@@ -8,11 +8,11 @@ export interface SendEmailParams {
 }
 
 export async function sendColdEmail(params: SendEmailParams, settings: Settings): Promise<void> {
-  const userEmail = settings.gmailEmail;
-  const userPassword = settings.gmailAppPassword;
+  const userEmail = settings.gmailEmail || process.env.GMAIL_EMAIL;
+  const userPassword = settings.gmailAppPassword || process.env.GMAIL_APP_PASSWORD;
 
   if (!userEmail || !userPassword) {
-    throw new Error('Gmail SMTP credentials are not configured. Please set Gmail email and App Password in Settings.');
+    throw new Error('Gmail SMTP credentials are not configured. Please set Gmail email and App Password in Settings or environment variables.');
   }
 
   // Create transporter
