@@ -313,26 +313,26 @@ export async function scrapeLeadsGorilla(
     // Fetch coordinates and inject mock autocompleteObject (using string templates to prevent tsx/esbuild renaming)
     const coords = await getCoordinates(searchParams.location);
     logDebug(`Injecting autocomplete mock coordinates for ${searchParams.location}: lat=${coords.lat}, lng=${coords.lng}`);
-    await page.evaluate(`(coords) => {
+    await page.evaluate(`
       window.autocompleteObject = {
         getPlace: () => ({
           geometry: {
             viewport: {
               getCenter: () => ({
-                lat: () => coords.lat,
-                lng: () => coords.lng
+                lat: () => ${coords.lat},
+                lng: () => ${coords.lng}
               })
             }
           }
         })
       };
-    }`, coords);
+    `);
 
     // Change button type to 'button' to prevent form submission page reloads (using string template)
-    await page.evaluate(`() => {
+    await page.evaluate(`
       const btn = document.querySelector('#search-leads');
       if (btn) btn.setAttribute('type', 'button');
-    }`);
+    `);
 
     // Trigger Search
     logDebug('Submitting search form...');
@@ -340,7 +340,7 @@ export async function scrapeLeadsGorilla(
 
     // 4. Wait for search results
     logDebug('Giving browser a moment to process click and render loader...');
-    await page.evaluate('() => new Promise(r => setTimeout(r, 2000))');
+    await page.evaluate('new Promise(r => setTimeout(r, 2000))');
 
     logDebug('Waiting for search loader to appear...');
     const loaderSelector = '.Loader .loader, #search-results .loader';
@@ -353,21 +353,21 @@ export async function scrapeLeadsGorilla(
       });
     } else {
       logDebug('Search loader was not detected. Waiting for search button to be active/re-enabled...');
-      await page.waitForFunction(`() => {
+      await page.waitForFunction(`(() => {
         const btn = document.querySelector('#search-leads');
         if (!btn) return false;
         const text = (btn.textContent || '').toLowerCase();
         const isDisabled = btn.hasAttribute('disabled');
         return text.includes('search') && !text.includes('searching') && !isDisabled;
-      }`, { timeout: 120000 }).catch(() => {});
+      })()`, { timeout: 120000 }).catch(() => {});
     }
 
     // Wait a brief moment for the DOM to settle rendering the results
-    await page.evaluate('() => new Promise(r => setTimeout(r, 3000))');
+    await page.evaluate('new Promise(r => setTimeout(r, 3000))');
 
-    // 5. Parse leads from DOM (using string template to prevent tsx/esbuild __name helper injection)
+    // 5. Parse leads from DOM (using new Function to compile block and prevent tsx/esbuild __name helper injection)
     logDebug('Parsing search results from DOM...');
-    const leads = await page.evaluate(`(keyword) => {
+    const leads = await page.evaluate(new Function('keyword', `
       const results = [];
       // Find all h4 elements inside the search-results section
       const h4Elements = Array.from(document.querySelectorAll('#search-results h4'));
@@ -455,7 +455,7 @@ export async function scrapeLeadsGorilla(
       }
 
       return results;
-    }`, searchParams.keyword);
+    `), searchParams.keyword);
 
     logDebug(`Successfully scraped ${leads.length} real leads.`);
     
