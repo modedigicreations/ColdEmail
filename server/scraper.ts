@@ -1,6 +1,12 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Crawl a lead's website to extract context
 export async function crawlWebsite(url: string): Promise<string> {
@@ -162,9 +168,10 @@ export async function scrapeLeadsGorilla(
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
+  let page: any = null;
 
   try {
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
 
     // 1. Go to Leads Gorilla login page
@@ -253,7 +260,7 @@ export async function scrapeLeadsGorilla(
 
     // 5. Parse leads from DOM
     console.log('Parsing search results table...');
-    const leads = await page.evaluate((keyword) => {
+    const leads = await page.evaluate((keyword: string) => {
       const results: any[] = [];
       const rows = Array.from(document.querySelectorAll('table tbody tr'));
 
@@ -354,6 +361,19 @@ export async function scrapeLeadsGorilla(
     return leads;
 
   } catch (error: any) {
+    if (page) {
+      try {
+        const debugDir = path.join(__dirname, 'debug');
+        if (!fs.existsSync(debugDir)) {
+          fs.mkdirSync(debugDir, { recursive: true });
+        }
+        await page.screenshot({ path: path.join(debugDir, 'error.png') });
+        fs.writeFileSync(path.join(debugDir, 'error.html'), await page.content());
+        console.log('Saved debug screenshot and HTML source to server/dist/debug/');
+      } catch (debugError: any) {
+        console.error('Failed to save debug info:', debugError.message);
+      }
+    }
     await browser.close();
     console.error('Puppeteer scraping failed:', error.message);
     throw error;

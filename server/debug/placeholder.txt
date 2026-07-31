@@ -1,0 +1,1 @@
+This folder is used for saving debug screenshots and HTML files when Puppeteer runs encounter errors.
