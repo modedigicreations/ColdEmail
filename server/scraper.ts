@@ -240,37 +240,52 @@ export async function scrapeLeadsGorilla(
     await page.click(submitBtnSelector);
 
     // 4. Wait for search results
-    console.log('Waiting for search to start...');
-    await page.waitForFunction(() => {
-      const btn = document.querySelector('#search-leads');
-      return btn && (btn.textContent || '').toLowerCase().includes('searching');
-    }, { timeout: 15000 }).catch(() => {
-      console.log('Search button did not transition to searching state, continuing...');
-    });
+    console.log('Submitting search form...');
+    // Give browser a short moment to process click and create loader
+    await page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
 
-    console.log('Searching Google Places via Leads Gorilla... (waiting up to 120 seconds for completion)');
-    await page.waitForFunction(() => {
-      const btn = document.querySelector('#search-leads');
-      if (!btn) return false;
-      const text = (btn.textContent || '').toLowerCase();
-      const isDisabled = btn.hasAttribute('disabled');
-      return text.includes('search') && !text.includes('searching') && !isDisabled;
-    }, { timeout: 120000 });
+    console.log('Waiting for search loader to appear...');
+    const loaderSelector = '.Loader .loader, #search-results .loader';
+    const loaderExists = await page.waitForSelector(loaderSelector, { timeout: 15000 }).then(() => true).catch(() => false);
+    
+    if (loaderExists) {
+      console.log('Search loader detected. Waiting for it to disappear (this indicates completion)...');
+      await page.waitForSelector(loaderSelector, { hidden: true, timeout: 150000 }).catch(() => {
+        console.log('Loader did not disappear in time, continuing parser anyway...');
+      });
+    } else {
+      console.log('Search loader was not detected. Waiting for search button to be active/re-enabled...');
+      await page.waitForFunction(() => {
+        const btn = document.querySelector('#search-leads');
+        if (!btn) return false;
+        const text = (btn.textContent || '').toLowerCase();
+        const isDisabled = btn.hasAttribute('disabled');
+        return text.includes('search') && !text.includes('searching') && !isDisabled;
+      }, { timeout: 120000 }).catch(() => {});
+    }
 
     // Wait a brief moment for the DOM to settle rendering the results
-    await page.evaluate(() => new Promise(r => setTimeout(r, 1500)));
+    await page.evaluate(() => new Promise(r => setTimeout(r, 2500)));
 
     // 5. Parse leads from DOM
     console.log('Parsing search results from DOM...');
     const leads = await page.evaluate((keyword: string) => {
       const results: any[] = [];
-      const items = Array.from(document.querySelectorAll('#search-results .panel, #search-results .card, #search-results .lead, #search-results tr, #search-results .lead-item'));
+      // Find all h4 elements inside the search-results section
+      const h4Elements = Array.from(document.querySelectorAll('#search-results h4'));
 
-      for (const item of items) {
-        // Business Name
-        const nameEl = item.querySelector('.business-name, .card-title, h3, h4, h5, strong, a.business-link');
-        const name = nameEl ? nameEl.textContent?.trim() : '';
-        if (!name || name.toLowerCase().includes('search') || name.toLowerCase().includes('actions') || name.length < 2) continue;
+      for (const h4 of h4Elements) {
+        // Business Name is the text of the h4 (excluding child badges like Claimed/Unclaimed)
+        const clonedH4 = h4.cloneNode(true) as HTMLElement;
+        clonedH4.querySelectorAll('.badge, span').forEach(el => el.remove());
+        const name = clonedH4.textContent?.trim() || '';
+        
+        if (!name || name.toLowerCase().includes('search') || name.toLowerCase().includes('actions') || name.length < 2) {
+          continue;
+        }
+
+        // Find the wrapper container for this lead (usually a panel or card)
+        const item = h4.closest('.panel, .card, .lead, tr, div[class*="lead" i]') || h4.parentElement || h4;
 
         // Website (find link that isn't a social media or system link)
         const links = Array.from(item.querySelectorAll('a'));
