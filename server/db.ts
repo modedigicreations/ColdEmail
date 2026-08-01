@@ -24,7 +24,9 @@ export interface Lead {
 }
 
 export interface Settings {
+  aiProvider: 'claude' | 'deepseek';
   anthropicApiKey: string;
+  deepseekApiKey: string;
   gmailEmail: string;
   gmailAppPassword: string;
   systemPrompt: string;
@@ -36,7 +38,9 @@ interface DatabaseSchema {
 }
 
 const DEFAULT_SETTINGS: Settings = {
+  aiProvider: 'claude',
   anthropicApiKey: '',
+  deepseekApiKey: '',
   gmailEmail: '',
   gmailAppPassword: '',
   systemPrompt: `You are a cold outreach specialist. Compose a highly personalized, compelling, and professional cold email to the business. 

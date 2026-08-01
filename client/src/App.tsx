@@ -25,7 +25,9 @@ interface Lead {
 }
 
 interface Settings {
+  aiProvider: 'claude' | 'deepseek';
   anthropicApiKey: string;
+  deepseekApiKey: string;
   gmailEmail: string;
   gmailAppPassword: string;
   systemPrompt: string;
@@ -39,7 +41,9 @@ export default function App() {
   // Leads & Data States
   const [leads, setLeads] = useState<Lead[]>([]);
   const [settings, setSettings] = useState<Settings>({
+    aiProvider: 'claude',
     anthropicApiKey: '',
+    deepseekApiKey: '',
     gmailEmail: '',
     gmailAppPassword: '',
     systemPrompt: ''
@@ -507,18 +511,58 @@ export default function App() {
 
           <form onSubmit={handleSaveSettings}>
             <div className="form-group">
-              <label>Claude Anthropic API Key</label>
-              <input 
-                type="password" 
-                className="form-control" 
-                value={settings.anthropicApiKey}
-                onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
-                placeholder="sk-ant-..."
-              />
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Used by the composer agent to read scraped context and write highly personalized cold outreach emails.
-              </p>
+              <label>AI Copywriter Provider</label>
+              <div style={{ display: 'flex', gap: '20px', marginTop: '6px', marginBottom: '16px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
+                  <input 
+                    type="radio" 
+                    name="aiProvider"
+                    checked={settings.aiProvider === 'claude'}
+                    onChange={() => setSettings({ ...settings, aiProvider: 'claude' })}
+                  />
+                  Claude AI (Anthropic)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
+                  <input 
+                    type="radio" 
+                    name="aiProvider"
+                    checked={settings.aiProvider === 'deepseek'}
+                    onChange={() => setSettings({ ...settings, aiProvider: 'deepseek' })}
+                  />
+                  DeepSeek AI
+                </label>
+              </div>
             </div>
+
+            {settings.aiProvider === 'claude' ? (
+              <div className="form-group">
+                <label>Claude Anthropic API Key</label>
+                <input 
+                  type="password" 
+                  className="form-control" 
+                  value={settings.anthropicApiKey}
+                  onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
+                  placeholder="sk-ant-..."
+                />
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Used by the composer agent to read scraped context and write highly personalized cold outreach emails.
+                </p>
+              </div>
+            ) : (
+              <div className="form-group">
+                <label>DeepSeek API Key</label>
+                <input 
+                  type="password" 
+                  className="form-control" 
+                  value={settings.deepseekApiKey}
+                  onChange={e => setSettings({ ...settings, deepseekApiKey: e.target.value })}
+                  placeholder="sk-..."
+                />
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Used by DeepSeek-V3 to write highly personalized cold outreach emails.
+                </p>
+              </div>
+            )}
 
             <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
