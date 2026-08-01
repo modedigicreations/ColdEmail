@@ -565,7 +565,7 @@ export default function App() {
         /* Leads Dashboard Tab */
         <div className="dashboard-grid">
           {/* Main Dashboard Section (Left Column) */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', minWidth: 0 }}>
             {/* Stats Row */}
             <div className="stats-row">
               <div className="stat-item">
@@ -806,14 +806,14 @@ export default function App() {
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.category || 'N/A'}</div>
                           </td>
                           <td>
-                            <div style={{ fontSize: '13px' }}>
+                            <div style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px' }}>
                               {lead.website ? (
-                                <a href={`https://${lead.website.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--info)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                  <Globe size={12} /> {lead.website}
+                                <a href={`https://${lead.website.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--info)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <Globe size={12} style={{ flexShrink: 0 }} /> {lead.website}
                                 </a>
                               ) : 'No Web'}
                             </div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.email || 'No Email'}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px' }}>{lead.email || 'No Email'}</div>
                           </td>
                           <td>
                             {lead.seoIssues && lead.seoIssues.length > 0 ? (
@@ -878,7 +878,7 @@ export default function App() {
           </div>
 
           {/* AI Outreach Pane & Composer (Right Column) */}
-          <div className="glass-card" style={{ height: 'fit-content', position: 'sticky', top: '24px' }}>
+          <div className="glass-card" style={{ height: 'fit-content', position: 'sticky', top: '24px', minWidth: 0 }}>
             {!selectedLead ? (
               <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                 <Mail size={48} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
