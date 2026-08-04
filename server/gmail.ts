@@ -17,11 +17,14 @@ export async function sendColdEmail(params: SendEmailParams, settings: Settings)
 
   // Create transporter
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     auth: {
       user: userEmail,
       pass: userPassword
-    }
+    },
+    connectionTimeout: 15000 // 15 seconds connection timeout
   });
 
   // Verify connection configuration
