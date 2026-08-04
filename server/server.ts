@@ -33,6 +33,16 @@ app.get('/api/leads', (req, res) => {
   }
 });
 
+// Sync leads database from client
+app.post('/api/leads/sync', (req, res) => {
+  try {
+    db.syncLeads(req.body);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Update a lead
 app.patch('/api/leads/:id', (req, res) => {
   try {

@@ -132,6 +132,11 @@ class Database {
     this.save();
   }
 
+  syncLeads(leads: Lead[]): void {
+    this.data.leads = leads;
+    this.save();
+  }
+
   getSettings(): Settings {
     return this.data.settings;
   }

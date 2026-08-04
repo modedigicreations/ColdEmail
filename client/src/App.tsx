@@ -99,13 +99,54 @@ export default function App() {
     setTimeout(() => setMessage(null), 5000);
   };
 
+  // Save leads to localStorage whenever they change
+  useEffect(() => {
+    if (leads && leads.length > 0) {
+      localStorage.setItem('coldreach_leads', JSON.stringify(leads));
+    } else if (leads && leads.length === 0) {
+      localStorage.removeItem('coldreach_leads');
+    }
+  }, [leads]);
+
   const fetchLeads = async () => {
     try {
       const res = await fetch(`${API_BASE}/leads`);
       const data = await res.json();
+      
+      // If backend database has no leads, but we have cached leads, restore them automatically
+      if (Array.isArray(data) && data.length === 0) {
+        const localLeadsStr = localStorage.getItem('coldreach_leads');
+        if (localLeadsStr) {
+          try {
+            const localLeads = JSON.parse(localLeadsStr);
+            if (Array.isArray(localLeads) && localLeads.length > 0) {
+              console.log('Restoring leads from localStorage to server database...');
+              await fetch(`${API_BASE}/leads/sync`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(localLeads)
+              });
+              setLeads(localLeads);
+              return;
+            }
+          } catch (parseErr) {
+            console.error('Failed to parse local leads', parseErr);
+          }
+        }
+      }
       setLeads(data);
     } catch (e) {
       console.error(e);
+      // Offline fallback: load from browser cache on API/network failure
+      const localLeadsStr = localStorage.getItem('coldreach_leads');
+      if (localLeadsStr) {
+        try {
+          const localLeads = JSON.parse(localLeadsStr);
+          setLeads(localLeads);
+          showMsg('Offline Mode: Loaded leads from browser storage', 'success');
+          return;
+        } catch {}
+      }
       showMsg('Failed to load leads from backend', 'error');
     }
   };
@@ -114,9 +155,33 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/settings`);
       const data = await res.json();
+      
+      // Restore settings to backend if missing on startup
+      if (!data.gmailEmail && !data.anthropicApiKey && !data.deepseekApiKey) {
+        const localSettingsStr = localStorage.getItem('coldreach_settings');
+        if (localSettingsStr) {
+          try {
+            const localSettings = JSON.parse(localSettingsStr);
+            console.log('Restoring settings from localStorage to server...');
+            await fetch(`${API_BASE}/settings`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(localSettings)
+            });
+            setSettings(localSettings);
+            return;
+          } catch {}
+        }
+      }
       setSettings(data);
     } catch (e) {
       console.error(e);
+      const localSettingsStr = localStorage.getItem('coldreach_settings');
+      if (localSettingsStr) {
+        try {
+          setSettings(JSON.parse(localSettingsStr));
+        } catch {}
+      }
     }
   };
 
@@ -131,9 +196,12 @@ export default function App() {
       });
       const data = await res.json();
       setSettings(data);
+      localStorage.setItem('coldreach_settings', JSON.stringify(data));
       showMsg('Settings saved successfully');
     } catch (e) {
-      showMsg('Failed to save settings', 'error');
+      console.error(e);
+      showMsg('Failed to save settings to server. Saving locally.', 'error');
+      localStorage.setItem('coldreach_settings', JSON.stringify(settings));
     } finally {
       setIsLoading(false);
     }
@@ -951,7 +1019,38 @@ export default function App() {
                     <div><strong>SEO Score:</strong> {selectedLead.seoScore ? `${selectedLead.seoScore}/100` : 'N/A'}</div>
                     <div><strong>GMB Rating:</strong> {selectedLead.gmbRating ? `${selectedLead.gmbRating}/5` : 'N/A'}</div>
                   </div>
-                  <div><strong>Email:</strong> {selectedLead.email || <span style={{ color: 'var(--danger)' }}>Missing (Need Email to Send)</span>}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', marginBottom: '4px' }}>
+                    <strong>Email:</strong>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      style={{ 
+                        flex: 1,
+                        padding: '2px 8px', 
+                        fontSize: '12px', 
+                        height: '24px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        color: 'var(--text-main)'
+                      }}
+                      value={selectedLead.email || ''} 
+                      onChange={async (e) => {
+                        const newEmail = e.target.value;
+                        setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, email: newEmail } : l));
+                        try {
+                          await fetch(`${API_BASE}/leads/${selectedLead.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: newEmail })
+                          });
+                        } catch (err) {
+                          console.error('Failed to sync updated email', err);
+                        }
+                      }}
+                      placeholder="Enter email to test delivery"
+                    />
+                  </div>
                   {selectedLead.website && (
                     <div style={{ marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <strong>Website:</strong> <a href={`https://${selectedLead.website.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ color: 'var(--info)' }}>{selectedLead.website}</a>
