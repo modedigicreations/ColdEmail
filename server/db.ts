@@ -27,8 +27,11 @@ export interface Settings {
   aiProvider: 'claude' | 'deepseek';
   anthropicApiKey: string;
   deepseekApiKey: string;
+  emailProvider: 'gmail' | 'resend';
   gmailEmail: string;
   gmailAppPassword: string;
+  resendApiKey: string;
+  resendFromEmail: string;
   systemPrompt: string;
 }
 
@@ -41,8 +44,11 @@ const DEFAULT_SETTINGS: Settings = {
   aiProvider: 'claude',
   anthropicApiKey: '',
   deepseekApiKey: '',
+  emailProvider: 'gmail',
   gmailEmail: '',
   gmailAppPassword: '',
+  resendApiKey: '',
+  resendFromEmail: 'onboarding@resend.dev',
   systemPrompt: `You are a cold outreach specialist. Compose a highly personalized, compelling, and professional cold email to the business. 
 Reference their specific SEO or Google Business Profile issues (like slow website speed, missing SSL, low ratings) if available.
 Keep it brief (under 150 words), conversational, and offer direct value. Do not sound spammy. Use a friendly tone and close with a clear call to action.`

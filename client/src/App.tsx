@@ -28,8 +28,11 @@ interface Settings {
   aiProvider: 'claude' | 'deepseek';
   anthropicApiKey: string;
   deepseekApiKey: string;
+  emailProvider: 'gmail' | 'resend';
   gmailEmail: string;
   gmailAppPassword: string;
+  resendApiKey: string;
+  resendFromEmail: string;
   systemPrompt: string;
 }
 
@@ -44,8 +47,11 @@ export default function App() {
     aiProvider: 'claude',
     anthropicApiKey: '',
     deepseekApiKey: '',
+    emailProvider: 'gmail',
     gmailEmail: '',
     gmailAppPassword: '',
+    resendApiKey: '',
+    resendFromEmail: 'onboarding@resend.dev',
     systemPrompt: ''
   });
   
@@ -157,7 +163,7 @@ export default function App() {
       const data = await res.json();
       
       // Restore settings to backend if missing on startup
-      if (!data.gmailEmail && !data.anthropicApiKey && !data.deepseekApiKey) {
+      if (!data.gmailEmail && !data.anthropicApiKey && !data.deepseekApiKey && !data.resendApiKey) {
         const localSettingsStr = localStorage.getItem('coldreach_settings');
         if (localSettingsStr) {
           try {
@@ -632,31 +638,75 @@ export default function App() {
               </div>
             )}
 
-            <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div>
-                <label>Gmail Email Address</label>
-                <input 
-                  type="email" 
-                  className="form-control" 
-                  value={settings.gmailEmail}
-                  onChange={e => setSettings({ ...settings, gmailEmail: e.target.value })}
-                  placeholder="name@gmail.com"
-                />
-              </div>
-              <div>
-                <label>Gmail App Password</label>
-                <input 
-                  type="password" 
-                  className="form-control" 
-                  value={settings.gmailAppPassword}
-                  onChange={e => setSettings({ ...settings, gmailAppPassword: e.target.value })}
-                  placeholder="xxxx xxxx xxxx xxxx"
-                />
-              </div>
+            <div className="form-group">
+              <label>Email Delivery Provider</label>
+              <select 
+                className="form-control"
+                value={settings.emailProvider || 'gmail'}
+                onChange={e => setSettings({ ...settings, emailProvider: e.target.value as 'gmail' | 'resend' })}
+              >
+                <option value="gmail">Gmail SMTP (Direct Delivery)</option>
+                <option value="resend">Resend API (HTTP Delivery — Bypasses Render Port Blocks)</option>
+              </select>
             </div>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '-8px', marginBottom: '16px' }}>
-              Gmail App Passwords can be generated in your Google Account Security settings under 2-Step Verification.
-            </p>
+
+            {(settings.emailProvider === 'gmail' || !settings.emailProvider) ? (
+              <>
+                <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label>Gmail Email Address</label>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      value={settings.gmailEmail}
+                      onChange={e => setSettings({ ...settings, gmailEmail: e.target.value })}
+                      placeholder="name@gmail.com"
+                    />
+                  </div>
+                  <div>
+                    <label>Gmail App Password</label>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      value={settings.gmailAppPassword}
+                      onChange={e => setSettings({ ...settings, gmailAppPassword: e.target.value })}
+                      placeholder="xxxx xxxx xxxx xxxx"
+                    />
+                  </div>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '-8px', marginBottom: '16px' }}>
+                  Gmail App Passwords can be generated in your Google Account Security settings under 2-Step Verification.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label>Resend API Key</label>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      value={settings.resendApiKey}
+                      onChange={e => setSettings({ ...settings, resendApiKey: e.target.value })}
+                      placeholder="re_..."
+                    />
+                  </div>
+                  <div>
+                    <label>Resend From Email</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      value={settings.resendFromEmail}
+                      onChange={e => setSettings({ ...settings, resendFromEmail: e.target.value })}
+                      placeholder="onboarding@resend.dev"
+                    />
+                  </div>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '-8px', marginBottom: '16px' }}>
+                  Enter your Resend API key and verification sender email (e.g. `onboarding@resend.dev` or your verified domain).
+                </p>
+              </>
+            )}
 
             <div className="form-group">
               <label>AI Personalization Prompt (System Prompt)</label>
