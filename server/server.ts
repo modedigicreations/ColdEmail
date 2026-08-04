@@ -91,6 +91,8 @@ app.post('/api/leads/upload', upload.single('file'), (req, res) => {
   }
 });
 
+let isAutomating = false;
+
 // Trigger automated scraping (Puppeteer)
 app.post('/api/leads/scrape', async (req, res) => {
   const { keyword, location, email, pass } = req.body;
@@ -105,6 +107,104 @@ app.post('/api/leads/scrape', async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// GET status of background automation
+app.get('/api/leads/automate-all/status', (req, res) => {
+  res.json({ isAutomating });
+});
+
+// POST start full background automation
+app.post('/api/leads/automate-all', (req, res) => {
+  const { keyword, location, email, pass, subject } = req.body;
+  if (!keyword || !location || !email || !pass || !subject) {
+    return res.status(400).json({ error: 'Keyword, Location, Leads Gorilla Email/Password, and Subject template are required.' });
+  }
+
+  if (isAutomating) {
+    return res.status(400).json({ error: 'An automation run is already in progress.' });
+  }
+
+  isAutomating = true;
+  res.json({ success: true, message: 'Fully automated outreach campaign started in the background.' });
+
+  // Run the background worker pipeline
+  (async () => {
+    try {
+      console.log(`[Automation] Starting scrape for "${keyword}" in "${location}"...`);
+      const scraped = await scrapeLeadsGorilla({ email, pass }, { keyword, location });
+      const added = db.addLeads(scraped);
+      console.log(`[Automation] Found ${scraped.length} leads. Added ${added.length} new unique leads.`);
+      
+      const settings = db.getSettings();
+
+      for (const lead of added) {
+        try {
+          // 1. Crawl website if it has a website and we haven't crawled it yet
+          let crawledText = lead.crawledText || '';
+          if (lead.website && !lead.crawledText) {
+            db.updateLead(lead.id, { status: 'sending', error: undefined });
+            try {
+              console.log(`[Automation] Crawling website for lead: ${lead.name}`);
+              crawledText = await crawlWebsite(lead.website);
+              db.updateLead(lead.id, { crawledText, status: 'crawled' });
+            } catch (crawlErr: any) {
+              console.error(`[Automation] Crawl failed for lead ${lead.name}:`, crawlErr.message);
+              db.updateLead(lead.id, { 
+                crawledText: `Failed to crawl website: ${crawlErr.message}`,
+                status: 'crawled'
+              });
+            }
+          }
+
+          // Fetch fresh lead state
+          const updatedLead = db.getLead(lead.id)!;
+
+          // 2. Generate email draft
+          console.log(`[Automation] Generating email draft for lead: ${lead.name}`);
+          db.updateLead(lead.id, { status: 'sending' });
+          const draft = await generateColdEmail(updatedLead, settings);
+          db.updateLead(lead.id, { emailDraft: draft, status: 'drafted' });
+
+          // 3. Send outreach email
+          const currentLead = db.getLead(lead.id)!;
+          if (currentLead.email) {
+            console.log(`[Automation] Sending outreach email to: ${currentLead.email}`);
+            const resolvedSubject = subject.replace(/{{Business Name}}/g, currentLead.name);
+            
+            await sendColdEmail({
+              to: currentLead.email,
+              subject: resolvedSubject,
+              body: draft
+            }, settings);
+
+            db.updateLead(lead.id, {
+              status: 'sent',
+              sentAt: new Date().toISOString()
+            });
+            console.log(`[Automation] Sent successfully to ${currentLead.email}`);
+          } else {
+            console.log(`[Automation] Skipped sending to ${lead.name}: No email address found`);
+            db.updateLead(lead.id, {
+              status: 'failed',
+              error: 'Outreach skipped: No email address found for this lead.'
+            });
+          }
+        } catch (leadErr: any) {
+          console.error(`[Automation] Action failed for lead ${lead.name}:`, leadErr.message);
+          db.updateLead(lead.id, {
+            status: 'failed',
+            error: leadErr.message
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('[Automation] Campaign run crashed:', err.message);
+    } finally {
+      console.log('[Automation] Background campaign run finished.');
+      isAutomating = false;
+    }
+  })();
 });
 
 // Crawl lead website

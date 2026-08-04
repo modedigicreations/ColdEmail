@@ -77,6 +77,7 @@ export default function App() {
   const [loadingLeadId, setLoadingLeadId] = useState<string | null>(null);
   const [isAutomating, setIsAutomating] = useState(false);
   const [isBulkSending, setIsBulkSending] = useState(false);
+  const [isFullAutomating, setIsFullAutomating] = useState(false);
   const [automationProgress, setAutomationProgress] = useState<{ current: number; total: number; label: string } | null>(null);
 
   const isAutomatingRef = useRef(false);
@@ -90,6 +91,7 @@ export default function App() {
   useEffect(() => {
     fetchLeads();
     fetchSettings();
+    checkAutomationStatus();
   }, []);
 
   useEffect(() => {
@@ -113,6 +115,20 @@ export default function App() {
       localStorage.removeItem('coldreach_leads');
     }
   }, [leads]);
+
+  // Poll leads list and status every 5 seconds if background automation is running
+  useEffect(() => {
+    let interval: any;
+    if (isFullAutomating) {
+      interval = setInterval(() => {
+        fetchLeads();
+        checkAutomationStatus();
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isFullAutomating]);
 
   const fetchLeads = async () => {
     try {
@@ -241,10 +257,21 @@ export default function App() {
     }
   };
 
+  const checkAutomationStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/leads/automate-all/status`);
+      const data = await res.json();
+      setIsFullAutomating(data.isAutomating);
+    } catch (err) {
+      console.error('Failed to fetch automation status', err);
+    }
+  };
+
   // Puppeteer Scraping
   const handleScrapeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsScraping(true);
+    showMsg('Starting Puppeteer leads search...', 'success');
     try {
       const res = await fetch(`${API_BASE}/leads/scrape`, {
         method: 'POST',
@@ -253,7 +280,7 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        showMsg(`Scraping complete. Added ${data.count} leads.`);
+        showMsg(`Scrape completed. Added ${data.count} leads.`);
         fetchLeads();
       } else {
         showMsg(data.error || 'Scraping failed', 'error');
@@ -262,6 +289,42 @@ export default function App() {
       showMsg('Network error during scraping', 'error');
     } finally {
       setIsScraping(false);
+    }
+  };
+
+  // Launch Fully Automated Outreach Campaign
+  const handleFullAutomationSubmit = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!scrapeParams.keyword || !scrapeParams.location || !scrapeParams.email || !scrapeParams.pass) {
+      showMsg('Keyword, Location, and Leads Gorilla credentials are required.', 'error');
+      return;
+    }
+
+    setIsFullAutomating(true);
+    showMsg('Launching fully automated campaign in the background...', 'success');
+    try {
+      const res = await fetch(`${API_BASE}/leads/automate-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword: scrapeParams.keyword,
+          location: scrapeParams.location,
+          email: scrapeParams.email,
+          pass: scrapeParams.pass,
+          subject: emailSubject
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMsg(data.message || 'Campaign started!', 'success');
+        fetchLeads();
+      } else {
+        showMsg(data.error || 'Failed to start campaign', 'error');
+        setIsFullAutomating(false);
+      }
+    } catch (err) {
+      showMsg('Network error starting campaign', 'error');
+      setIsFullAutomating(false);
     }
   };
 
@@ -822,14 +885,24 @@ export default function App() {
                       onChange={e => setScrapeParams({ ...scrapeParams, pass: e.target.value })}
                     />
                   </div>
-                  <button 
-                    type="submit" 
-                    className="btn btn-primary" 
-                    disabled={isScraping}
-                    style={{ gridColumn: 'span 2' }}
-                  >
-                    {isScraping ? <Loader2 className="animate-spin" size={16} /> : 'Start Puppeteer Browser Scrape'}
-                  </button>
+                  <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary" 
+                      disabled={isScraping || isFullAutomating}
+                    >
+                      {isScraping ? <Loader2 className="animate-spin" size={16} /> : 'Scrape Leads Only'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ background: '#22c55e', borderColor: '#22c55e', color: '#000', fontWeight: 600 }}
+                      disabled={isScraping || isFullAutomating}
+                      onClick={handleFullAutomationSubmit}
+                    >
+                      {isFullAutomating ? <Loader2 className="animate-spin" size={16} /> : 'Launch Fully Automated Campaign'}
+                    </button>
+                  </div>
                 </form>
               )}
             </div>
@@ -839,6 +912,11 @@ export default function App() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
                 <h2>Leads List</h2>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {isFullAutomating && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(34,197,94,0.2)' }}>
+                      <Loader2 size={12} className="animate-spin" /> Background Campaign Active...
+                    </div>
+                  )}
                   {isAutomating ? (
                     <button 
                       className="btn btn-danger" 
