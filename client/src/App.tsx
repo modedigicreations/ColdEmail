@@ -925,7 +925,39 @@ export default function App() {
                                 </a>
                               ) : 'No Web'}
                             </div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px' }}>{lead.email || 'No Email'}</div>
+                            <div 
+                              style={{ marginTop: '2px' }}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <input 
+                                type="email"
+                                style={{
+                                  fontSize: '11px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  borderBottom: '1px dashed rgba(255,255,255,0.15)',
+                                  color: lead.email ? 'var(--text-main)' : 'var(--danger)',
+                                  padding: '1px 0px',
+                                  width: '100%',
+                                  maxWidth: '180px',
+                                }}
+                                value={lead.email || ''}
+                                onChange={async (e) => {
+                                  const newEmail = e.target.value;
+                                  setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, email: newEmail } : l));
+                                  try {
+                                    await fetch(`${API_BASE}/leads/${lead.id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ email: newEmail })
+                                    });
+                                  } catch (err) {
+                                    console.error('Failed to sync updated email', err);
+                                  }
+                                }}
+                                placeholder="Add test email"
+                              />
+                            </div>
                           </td>
                           <td>
                             {lead.seoIssues && lead.seoIssues.length > 0 ? (
