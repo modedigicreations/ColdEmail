@@ -33,6 +33,7 @@ export interface Settings {
   resendApiKey: string;
   resendFromEmail: string;
   systemPrompt: string;
+  emailSignature: string;
 }
 
 interface DatabaseSchema {
@@ -49,6 +50,7 @@ const DEFAULT_SETTINGS: Settings = {
   gmailAppPassword: '',
   resendApiKey: '',
   resendFromEmail: 'onboarding@resend.dev',
+  emailSignature: 'Best regards,\n\n[Your Name]\n[Your Company]\nPhone: [Your Phone]\nEmail: [Your Email]',
   systemPrompt: `You are a cold outreach specialist. Compose a highly personalized, compelling, and professional cold email to the business. 
 Reference their specific SEO or Google Business Profile issues (like slow website speed, missing SSL, low ratings) if available.
 Keep it brief (under 150 words), conversational, and offer direct value. Do not sound spammy. Use a friendly tone and close with a clear call to action.`

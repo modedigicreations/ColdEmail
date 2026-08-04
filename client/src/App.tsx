@@ -34,6 +34,7 @@ interface Settings {
   resendApiKey: string;
   resendFromEmail: string;
   systemPrompt: string;
+  emailSignature: string;
 }
 
 export default function App() {
@@ -52,7 +53,8 @@ export default function App() {
     gmailAppPassword: '',
     resendApiKey: '',
     resendFromEmail: 'onboarding@resend.dev',
-    systemPrompt: ''
+    systemPrompt: '',
+    emailSignature: ''
   });
   
   // Selection
@@ -779,6 +781,20 @@ export default function App() {
                 value={settings.systemPrompt}
                 onChange={e => setSettings({ ...settings, systemPrompt: e.target.value })}
               />
+            </div>
+
+            <div className="form-group">
+              <label>Email Signature (Concludes all outreach emails)</label>
+              <textarea 
+                className="form-control" 
+                rows={4}
+                value={settings.emailSignature}
+                onChange={e => setSettings({ ...settings, emailSignature: e.target.value })}
+                placeholder="Best regards,&#10;&#10;John Smith&#10;Sales Executive | Acme Corp"
+              />
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                This signature will conclude all generated outreach drafts. Leave brackets/placeholders in your prompt and the AI will replace them with these details.
+              </p>
             </div>
 
             <button type="submit" className="btn btn-primary" disabled={isLoading} style={{ width: '100%' }}>

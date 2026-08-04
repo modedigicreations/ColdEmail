@@ -22,9 +22,12 @@ System Prompt: ${settings.systemPrompt}
 Here is the lead's business information:
 ${leadContext}
 
+Here is your (the sender's) contact details and email signature to conclude the email:
+${settings.emailSignature || 'N/A'}
+
 Please compose a highly personalized cold email tailored to this business. Highlight how we can solve their specific issues (e.g. fix their website, improve their SEO score, help with their Google Business listing). Make it compelling, professional, short, and close with a question or call to action. 
 
-Do not include any placeholders like [Your Name] or [Your Company]. Write it as a ready-to-send draft.
+Conclude the email using the provided contact details and email signature. Do not output any placeholders or brackets.
   `.trim();
 
   if (provider === 'deepseek') {
