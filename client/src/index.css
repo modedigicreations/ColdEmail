@@ -278,6 +278,10 @@ tr:hover td {
   background: var(--info-bg);
   color: #93c5fd;
 }
+.badge-site_ready {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
 .badge-drafted {
   background: var(--warning-bg);
   color: #fde047;

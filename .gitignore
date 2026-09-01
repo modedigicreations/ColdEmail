@@ -4,3 +4,6 @@ dist/
 db.json
 .DS_Store
 .cache/
+server/public/sites/*
+!server/public/sites/.gitkeep
+server/debug/

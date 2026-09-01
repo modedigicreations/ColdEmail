@@ -6,6 +6,8 @@ import { db } from './db.js';
 import { crawlWebsite, parseLeadsGorillaCSV, scrapeLeadsGorilla } from './scraper.js';
 import { generateColdEmail } from './composer.js';
 import { sendColdEmail } from './gmail.js';
+import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
+import { generateWebsiteHtml } from './siteBuilder.js';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,6 +23,7 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 app.use('/debug', express.static(path.join(__dirname, 'debug')));
+app.use('/sites', express.static(path.join(process.cwd(), 'public', 'sites')));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -158,19 +161,56 @@ app.post('/api/leads/automate-all', (req, res) => {
           }
 
           // Fetch fresh lead state
-          const updatedLead = db.getLead(lead.id)!;
+          let currentLead = db.getLead(lead.id)!;
 
-          // 2. Generate email draft
-          console.log(`[Automation] Generating email draft for lead: ${lead.name}`);
-          db.updateLead(lead.id, { status: 'sending' });
-          const draft = await generateColdEmail(updatedLead, settings);
-          db.updateLead(lead.id, { emailDraft: draft, status: 'drafted' });
+          // 2. Provision Subdomain on Hosting Dashboard
+          console.log(`[Automation] Creating subdomain for lead: ${currentLead.name}`);
+          db.updateLead(currentLead.id, { siteStatus: 'subdomain_created' });
+          const subResult = await createLeadSubdomain(currentLead, settings);
+          if (subResult.success) {
+            db.updateLead(currentLead.id, { 
+              subdomain: subResult.subdomain, 
+              demoSiteUrl: subResult.url 
+            });
+            console.log(`[Automation] Subdomain ready: ${subResult.url}`);
+          }
+          currentLead = db.getLead(currentLead.id)!;
 
-          // 3. Send outreach email
-          const currentLead = db.getLead(lead.id)!;
+          // 3. Generate AI Custom Website
+          console.log(`[Automation] Building tailored AI website for lead: ${currentLead.name}`);
+          db.updateLead(currentLead.id, { siteStatus: 'building' });
+          const siteHtml = await generateWebsiteHtml(currentLead, settings);
+          db.updateLead(currentLead.id, { demoSiteHtml: siteHtml });
+
+          // 4. Deploy Website to Subdomain
+          console.log(`[Automation] Deploying website for: ${currentLead.name}`);
+          if (currentLead.subdomain) {
+            const deployRes = await deployLeadWebsite(currentLead.subdomain, siteHtml, settings);
+            if (deployRes.success) {
+              db.updateLead(currentLead.id, { 
+                siteStatus: 'deployed', 
+                status: 'site_ready',
+                demoSiteUrl: deployRes.url
+              });
+              console.log(`[Automation] Website deployed successfully: ${deployRes.url}`);
+            }
+          }
+          currentLead = db.getLead(currentLead.id)!;
+
+          // 5. Generate Email draft with Live Demo Link
+          console.log(`[Automation] Generating email draft with demo link for lead: ${currentLead.name}`);
+          db.updateLead(currentLead.id, { status: 'sending' });
+          const draft = await generateColdEmail(currentLead, settings);
+          db.updateLead(currentLead.id, { emailDraft: draft, status: 'drafted' });
+
+          // 6. Send outreach email
+          currentLead = db.getLead(currentLead.id)!;
           if (currentLead.email) {
             console.log(`[Automation] Sending outreach email to: ${currentLead.email}`);
-            const resolvedSubject = subject.replace(/{{Business Name}}/g, currentLead.name);
+            const resolvedSubject = subject
+              .replace(/\{\{\s*Business Name\s*\}\}/gi, currentLead.name)
+              .replace(/\{\{\s*Demo Website\s*\}\}/gi, currentLead.demoSiteUrl || '')
+              .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, currentLead.demoSiteUrl || '');
             
             await sendColdEmail({
               to: currentLead.email,
@@ -178,14 +218,14 @@ app.post('/api/leads/automate-all', (req, res) => {
               body: draft
             }, settings);
 
-            db.updateLead(lead.id, {
+            db.updateLead(currentLead.id, {
               status: 'sent',
               sentAt: new Date().toISOString()
             });
             console.log(`[Automation] Sent successfully to ${currentLead.email}`);
           } else {
-            console.log(`[Automation] Skipped sending to ${lead.name}: No email address found`);
-            db.updateLead(lead.id, {
+            console.log(`[Automation] Skipped sending to ${currentLead.name}: No email address found`);
+            db.updateLead(currentLead.id, {
               status: 'failed',
               error: 'Outreach skipped: No email address found for this lead.'
             });
@@ -285,6 +325,131 @@ app.post('/api/leads/:id/send', async (req, res) => {
   } catch (error: any) {
     db.updateLead(req.params.id, { status: 'failed', error: error.message });
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Create Subdomain on hosting dashboard for lead
+app.post('/api/leads/:id/create-subdomain', async (req, res) => {
+  try {
+    const lead = db.getLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const settings = db.getSettings();
+    const result = await createLeadSubdomain(lead, settings);
+
+    if (result.success) {
+      const updated = db.updateLead(lead.id, {
+        subdomain: result.subdomain,
+        demoSiteUrl: result.url,
+        siteStatus: 'subdomain_created'
+      });
+      res.json(updated);
+    } else {
+      res.status(500).json({ error: result.error || 'Failed to create subdomain' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate AI website HTML
+app.post('/api/leads/:id/generate-site', async (req, res) => {
+  try {
+    const lead = db.getLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const settings = db.getSettings();
+    db.updateLead(lead.id, { siteStatus: 'building' });
+
+    const html = await generateWebsiteHtml(lead, settings);
+    const updated = db.updateLead(lead.id, {
+      demoSiteHtml: html,
+      siteStatus: 'building'
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    db.updateLead(req.params.id, { siteStatus: 'failed', error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Deploy website to subdomain
+app.post('/api/leads/:id/deploy-site', async (req, res) => {
+  try {
+    const lead = db.getLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    if (!lead.demoSiteHtml) return res.status(400).json({ error: 'Website HTML has not been generated yet' });
+
+    const settings = db.getSettings();
+    const subdomain = lead.subdomain || (await createLeadSubdomain(lead, settings)).subdomain;
+
+    const result = await deployLeadWebsite(subdomain, lead.demoSiteHtml, settings);
+    if (result.success) {
+      const updated = db.updateLead(lead.id, {
+        subdomain,
+        demoSiteUrl: result.url,
+        siteStatus: 'deployed',
+        status: 'site_ready'
+      });
+      res.json(updated);
+    } else {
+      res.status(500).json({ error: result.error || 'Failed to deploy website' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Build & Deploy All-in-One for a single lead
+app.post('/api/leads/:id/build-and-deploy', async (req, res) => {
+  try {
+    const lead = db.getLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const settings = db.getSettings();
+    db.updateLead(lead.id, { siteStatus: 'building' });
+
+    // 1. Subdomain
+    const subRes = await createLeadSubdomain(lead, settings);
+    const subdomain = subRes.subdomain;
+
+    // 2. Generate HTML
+    const html = await generateWebsiteHtml(lead, settings);
+
+    // 3. Deploy
+    const deployRes = await deployLeadWebsite(subdomain, html, settings);
+
+    const updated = db.updateLead(lead.id, {
+      subdomain,
+      demoSiteHtml: html,
+      demoSiteUrl: deployRes.url,
+      siteStatus: 'deployed',
+      status: 'site_ready'
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    db.updateLead(req.params.id, { siteStatus: 'failed', error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Preview generated website directly in iframe
+app.get('/api/leads/:id/site-preview', (req, res) => {
+  try {
+    const lead = db.getLead(req.params.id);
+    if (!lead) return res.status(404).send('Lead not found');
+
+    if (lead.demoSiteHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(lead.demoSiteHtml);
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send('<!DOCTYPE html><html><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>No demo website generated for this lead yet.</h3></body></html>');
+  } catch (error: any) {
+    res.status(500).send(`Preview error: ${error.message}`);
   }
 });
 

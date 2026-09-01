@@ -5,15 +5,20 @@ import { Lead, Settings } from './db.js';
 export async function generateColdEmail(lead: Lead, settings: Settings): Promise<string> {
   const provider = settings.aiProvider || 'claude';
   
+  const demoLinkText = lead.demoSiteUrl 
+    ? `Live Custom Demo Website Built For Them: ${lead.demoSiteUrl}` 
+    : 'Live Custom Demo Website Built For Them: N/A';
+
   const leadContext = `
 Business Name: ${lead.name}
 Category/Niche: ${lead.category || 'N/A'}
-Website: ${lead.website || 'N/A'}
+Current Website: ${lead.website || 'N/A'}
 Phone: ${lead.phone || 'N/A'}
 SEO Score: ${lead.seoScore ? `${lead.seoScore}/100` : 'N/A'}
 Google Business Rating: ${lead.gmbRating ? `${lead.gmbRating}/5` : 'N/A'}
 Identified SEO/Listing Issues: ${lead.seoIssues && lead.seoIssues.length > 0 ? lead.seoIssues.join(', ') : 'None specified'}
 Website Crawled Text: ${lead.crawledText || 'No website content crawled'}
+${demoLinkText}
   `.trim();
 
   const prompt = `
@@ -25,7 +30,10 @@ ${leadContext}
 Here is your (the sender's) contact details and email signature to conclude the email:
 ${settings.emailSignature || 'N/A'}
 
-Please compose a highly personalized cold email tailored to this business. Highlight how we can solve their specific issues (e.g. fix their website, improve their SEO score, help with their Google Business listing). Make it compelling, professional, short, and close with a question or call to action. 
+Please compose a highly personalized cold email tailored to this business.
+CRITICAL: If a live demo website link is provided (${lead.demoSiteUrl || 'N/A'}), enthusiastically present this link in the email! Explain that we went ahead and designed a modern, fast, mobile-responsive preview tailored specifically to their business to show them how their online presence and conversion rate can be transformed.
+Reference their specific audit issues (e.g. speed, mobile layout, SEO score, ratings) and show how the demo solves them.
+Keep the email under 150 words, conversational, respectful, and close with a low-friction question inviting them to review their live preview link.
 
 Conclude the email using the provided contact details and email signature. Do not output any placeholders or brackets.
   `.trim();

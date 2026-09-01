@@ -17,8 +17,12 @@ export interface Lead {
   gmbRating?: number;
   seoIssues?: string[];
   crawledText?: string;
+  subdomain?: string;
+  demoSiteUrl?: string;
+  demoSiteHtml?: string;
+  siteStatus?: 'not_started' | 'subdomain_created' | 'building' | 'deployed' | 'failed';
   emailDraft?: string;
-  status: 'not_started' | 'crawled' | 'drafted' | 'sending' | 'sent' | 'failed';
+  status: 'not_started' | 'crawled' | 'site_ready' | 'drafted' | 'sending' | 'sent' | 'failed';
   sentAt?: string;
   error?: string;
 }
@@ -34,6 +38,18 @@ export interface Settings {
   resendFromEmail: string;
   systemPrompt: string;
   emailSignature: string;
+  // Hosting & Subdomain Settings
+  hostingProvider: 'wildcard' | 'cpanel' | 'cloudflare' | 'puppeteer_dashboard';
+  baseDomain: string;
+  cpanelHost?: string;
+  cpanelUser?: string;
+  cpanelApiToken?: string;
+  cloudflareApiToken?: string;
+  cloudflareZoneId?: string;
+  hostingDashboardUrl?: string;
+  hostingDashboardEmail?: string;
+  hostingDashboardPass?: string;
+  websitePromptTemplate: string;
 }
 
 interface DatabaseSchema {
@@ -51,9 +67,30 @@ const DEFAULT_SETTINGS: Settings = {
   resendApiKey: '',
   resendFromEmail: 'onboarding@resend.dev',
   emailSignature: 'Best regards,\n\n[Your Name]\n[Your Company]\nPhone: [Your Phone]\nEmail: [Your Email]',
-  systemPrompt: `You are a cold outreach specialist. Compose a highly personalized, compelling, and professional cold email to the business. 
+  systemPrompt: `You are a cold outreach specialist. Compose a highly personalized, compelling, and professional cold email to the business.
 Reference their specific SEO or Google Business Profile issues (like slow website speed, missing SSL, low ratings) if available.
-Keep it brief (under 150 words), conversational, and offer direct value. Do not sound spammy. Use a friendly tone and close with a clear call to action.`
+Crucially, introduce the brand new, high-converting live demo redesign website we built for them at their personalized subdomain (use {{Demo Website}} or {{demoSiteUrl}}).
+Keep it brief (under 150 words), conversational, and offer direct value. Do not sound spammy. Use a friendly tone and close with a clear call to action to review the live preview.`,
+  hostingProvider: 'wildcard',
+  baseDomain: 'demo.modedigicreations.com',
+  cpanelHost: '',
+  cpanelUser: '',
+  cpanelApiToken: '',
+  cloudflareApiToken: '',
+  cloudflareZoneId: '',
+  hostingDashboardUrl: '',
+  hostingDashboardEmail: '',
+  hostingDashboardPass: '',
+  websitePromptTemplate: `You are an elite web designer and conversion rate optimization expert.
+Build a modern, high-converting, mobile-responsive single-page landing page website for this business.
+Incorporate:
+1. Clean, modern aesthetic with Tailwind CSS CDN and Google Fonts (Outfit/Inter).
+2. Engaging Hero section with a strong value proposition, headline, and direct CTA buttons (Call Now, Book Consultation, WhatsApp).
+3. "Why Choose Us" / Services section highlighting what this business offers.
+4. "Modern Web & Mobile Experience" badge/section showcasing that this site is lightning fast, SEO-optimized, and fixes their previous website issues (like mobile responsiveness, fast loading speed, SSL, and modern UX).
+5. Customer Testimonials / Trust proof with 5-star Google Review aesthetic.
+6. Clean contact section and footer with business phone, address, and hours.
+Output ONLY complete, raw, ready-to-render HTML (from <!DOCTYPE html> to </html>) including all CSS/JS via CDN. Do not include markdown code fences or backticks.`
 };
 
 class Database {
