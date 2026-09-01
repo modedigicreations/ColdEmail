@@ -1,15 +1,17 @@
 import axios from 'axios';
+import https from 'https';
 import { Settings } from '../db.js';
 import { wildcardAdapter } from './wildcardAdapter.js';
 import { DeployResult, HostingAdapter, SubdomainResult } from './types.js';
+
+const insecureHttpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 export class CpanelAdapter implements HostingAdapter {
   private getHeaders(settings: Settings) {
     const user = settings.cpanelUser?.trim();
     const token = settings.cpanelApiToken?.trim();
     return {
-      'Authorization': `cpanel ${user}:${token}`,
-      'Content-Type': 'application/json'
+      'Authorization': `cpanel ${user}:${token}`
     };
   }
 
@@ -47,7 +49,8 @@ export class CpanelAdapter implements HostingAdapter {
           dir: `public_html/${subdomain}`
         },
         headers: this.getHeaders(settings),
-        timeout: 15000
+        httpsAgent: insecureHttpsAgent,
+        timeout: 20000
       });
 
       const data = response.data;
@@ -91,15 +94,20 @@ export class CpanelAdapter implements HostingAdapter {
     }
 
     try {
-      // Use cPanel Fileman save_file_content API
+      // Use cPanel Fileman save_file_content API with URL-encoded form data
       const endpoint = `${host}/execute/Fileman/save_file_content`;
-      const response = await axios.post(endpoint, {
-        dir: `public_html/${subdomain}`,
-        filename: 'index.html',
-        content: html
-      }, {
-        headers: this.getHeaders(settings),
-        timeout: 20000
+      const form = new URLSearchParams();
+      form.append('dir', `public_html/${subdomain}`);
+      form.append('filename', 'index.html');
+      form.append('content', html);
+
+      const response = await axios.post(endpoint, form.toString(), {
+        headers: {
+          ...this.getHeaders(settings),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        httpsAgent: insecureHttpsAgent,
+        timeout: 25000
       });
 
       if (response.data.status === 1) {
