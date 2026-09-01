@@ -1,4 +1,4 @@
-import { Lead, Settings } from '../db.js';
+import { db, Lead, Settings } from '../db.js';
 import { generateSubdomainSlug } from './slugify.js';
 import { wildcardAdapter } from './wildcardAdapter.js';
 import { cpanelAdapter } from './cpanelAdapter.js';
@@ -6,7 +6,11 @@ import { cloudflareAdapter } from './cloudflareAdapter.js';
 import { DeployResult, SubdomainResult } from './types.js';
 
 export async function createLeadSubdomain(lead: Lead, settings: Settings): Promise<SubdomainResult> {
-  const slug = lead.subdomain || generateSubdomainSlug(lead.name);
+  const existingSlugs = db.getLeads()
+    .filter(l => l.id !== lead.id && l.subdomain)
+    .map(l => l.subdomain as string);
+
+  const slug = lead.subdomain || generateSubdomainSlug(lead.name, existingSlugs);
   const provider = settings.hostingProvider || 'wildcard';
 
   switch (provider) {

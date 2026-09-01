@@ -6,7 +6,11 @@ import {
   Monitor, Smartphone, ExternalLink, LayoutTemplate, Server
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || (
+  typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:5001/api'
+    : '/api'
+);
 
 interface Lead {
   id: string;
@@ -1300,14 +1304,16 @@ export default function App() {
                                   maxWidth: '180px',
                                 }}
                                 value={lead.email || ''}
-                                onChange={async (e) => {
+                                onChange={(e) => {
                                   const newEmail = e.target.value;
                                   setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, email: newEmail } : l));
+                                }}
+                                onBlur={async (e) => {
                                   try {
                                     await fetch(`${API_BASE}/leads/${lead.id}`, {
                                       method: 'PATCH',
                                       headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ email: newEmail })
+                                      body: JSON.stringify({ email: e.target.value })
                                     });
                                   } catch (err) {
                                     console.error('Failed to sync updated email', err);
@@ -1447,14 +1453,16 @@ export default function App() {
                         color: 'var(--text-main)'
                       }}
                       value={selectedLead.email || ''} 
-                      onChange={async (e) => {
+                      onChange={(e) => {
                         const newEmail = e.target.value;
                         setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, email: newEmail } : l));
+                      }}
+                      onBlur={async (e) => {
                         try {
                           await fetch(`${API_BASE}/leads/${selectedLead.id}`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: newEmail })
+                            body: JSON.stringify({ email: e.target.value })
                           });
                         } catch (err) {
                           console.error('Failed to sync updated email', err);
@@ -1576,8 +1584,8 @@ export default function App() {
                     }}>
                       {selectedLead.demoSiteHtml ? (
                         <iframe 
-                          key={selectedLead.id + (selectedLead.demoSiteHtml?.length || 0)}
-                          src={`${API_BASE}/leads/${selectedLead.id}/site-preview`}
+                          key={selectedLead.id + '-' + (selectedLead.siteStatus || '') + '-' + (selectedLead.demoSiteHtml?.length || 0)}
+                          src={`${API_BASE}/leads/${selectedLead.id}/site-preview?t=${encodeURIComponent(selectedLead.subdomain || '')}`}
                           title={`Preview for ${selectedLead.name}`}
                           style={{ 
                             width: deviceViewport === 'mobile' ? '375px' : '100%', 

@@ -1,4 +1,4 @@
-export function generateSubdomainSlug(name: string): string {
+export function generateSubdomainSlug(name: string, existingSlugs: string[] = []): string {
   if (!name) return 'demo-' + Math.random().toString(36).substring(2, 7);
 
   // Convert to lowercase and trim
@@ -21,6 +21,12 @@ export function generateSubdomainSlug(name: string): string {
   // Fallback if empty after sanitization
   if (!slug || slug.length < 2) {
     slug = 'demo-' + Math.random().toString(36).substring(2, 7);
+  }
+
+  // If slug already exists, append a short random hash to prevent collisions
+  if (existingSlugs.includes(slug)) {
+    const suffix = Math.random().toString(36).substring(2, 5);
+    slug = `${slug.substring(0, 26)}-${suffix}`;
   }
 
   return slug;

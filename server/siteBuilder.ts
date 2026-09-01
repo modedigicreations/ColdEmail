@@ -5,30 +5,35 @@ import { Lead, Settings } from './db.js';
 export function sanitizeHtmlOutput(raw: string): string {
   let cleaned = raw.trim();
 
-  // Strip markdown code fences if model returned ```html ... ```
-  if (cleaned.startsWith('```html')) {
-    cleaned = cleaned.substring(7);
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.substring(3);
+  // 1. Try to extract complete HTML document if embedded in text
+  const docMatch = cleaned.match(/(<!DOCTYPE\s+html[\s\S]*?<\/html>)/i) ||
+                   cleaned.match(/(<html[\s\S]*?<\/html>)/i);
+  if (docMatch) {
+    return docMatch[1].trim();
   }
 
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.substring(0, cleaned.length - 3);
+  // 2. Try to extract inside markdown code blocks
+  const codeBlockMatch = cleaned.match(/```(?:html)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    cleaned = codeBlockMatch[1].trim();
+  } else {
+    // Strip leading/trailing code fences if present
+    cleaned = cleaned.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '');
   }
 
   cleaned = cleaned.trim();
 
-  // Verify basic HTML structure or wrap
+  // 3. Fallback: Wrap in valid HTML5 structure if fragment
   if (!cleaned.toLowerCase().includes('<!doctype html') && !cleaned.toLowerCase().includes('<html')) {
     cleaned = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Modern Preview</title>
+  <title>Modern Redesign Preview</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-900 text-white min-h-screen">
+<body class="bg-slate-950 text-white min-h-screen">
   ${cleaned}
 </body>
 </html>`;

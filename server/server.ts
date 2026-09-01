@@ -7,6 +7,7 @@ import { crawlWebsite, parseLeadsGorillaCSV, scrapeLeadsGorilla } from './scrape
 import { generateColdEmail } from './composer.js';
 import { sendColdEmail } from './gmail.js';
 import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
+import { getSitesDir } from './hosting/wildcardAdapter.js';
 import { generateWebsiteHtml } from './siteBuilder.js';
 
 import path from 'path';
@@ -23,7 +24,7 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 app.use('/debug', express.static(path.join(__dirname, 'debug')));
-app.use('/sites', express.static(path.join(process.cwd(), 'public', 'sites')));
+app.use('/sites', express.static(getSitesDir()));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -441,12 +442,14 @@ app.get('/api/leads/:id/site-preview', (req, res) => {
     const lead = db.getLead(req.params.id);
     if (!lead) return res.status(404).send('Lead not found');
 
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', "frame-ancestors *");
+
     if (lead.demoSiteHtml) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.send(lead.demoSiteHtml);
     }
 
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send('<!DOCTYPE html><html><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>No demo website generated for this lead yet.</h3></body></html>');
   } catch (error: any) {
     res.status(500).send(`Preview error: ${error.message}`);

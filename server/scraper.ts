@@ -3,10 +3,14 @@ import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Insecure HTTPS agent allows crawling websites that have expired or self-signed SSL certificates (common for local leads needing fixes)
+const insecureHttpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Crawl a lead's website to extract context
 export async function crawlWebsite(url: string): Promise<string> {
@@ -19,6 +23,7 @@ export async function crawlWebsite(url: string): Promise<string> {
   try {
     const response = await axios.get(targetUrl, {
       timeout: 8000,
+      httpsAgent: insecureHttpsAgent,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
@@ -251,7 +256,14 @@ export async function scrapeLeadsGorilla(
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-zygote'
+    ]
   });
   let page: any = null;
 
