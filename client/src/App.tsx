@@ -292,6 +292,9 @@ export default function App() {
       const data = await res.json();
       if (res.ok && data.success) {
         setAiTestResult({ success: true, message: data.message });
+        if (data.verifiedModel) {
+          setSettings(prev => ({ ...prev, geminiModel: data.verifiedModel }));
+        }
       } else {
         setAiTestResult({ success: false, message: data.error || 'Connection test failed.' });
       }
@@ -883,16 +886,17 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <div className="form-group" style={{ maxWidth: '300px' }}>
+                  <div className="form-group" style={{ maxWidth: '320px' }}>
                     <label>Gemini Model</label>
                     <select 
                       className="form-control"
-                      value={settings.geminiModel || 'gemini-2.5-flash'}
+                      value={settings.geminiModel || 'gemini-1.5-flash'}
                       onChange={e => setSettings({ ...settings, geminiModel: e.target.value })}
                     >
-                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Next-Gen Recommended)</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast & Reliable)</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning & Complex Prompts)</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recommended / Default)</option>
+                      <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash Latest</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning)</option>
+                      <option value="gemini-pro">Gemini Pro</option>
                     </select>
                   </div>
                 </div>

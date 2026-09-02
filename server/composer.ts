@@ -46,23 +46,42 @@ Conclude the email using the provided contact details and email signature. Do no
     }
 
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      let modelName = settings.geminiModel || 'gemini-2.5-flash';
-      if (modelName === 'gemini-2.0-flash') modelName = 'gemini-2.5-flash';
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: settings.systemPrompt
-      });
+      const cleanKey = apiKey.trim();
+      const genAI = new GoogleGenerativeAI(cleanKey);
+      let modelName = settings.geminiModel || 'gemini-1.5-flash';
+      if (modelName === 'gemini-2.0-flash' || modelName === 'gemini-2.5-flash') {
+        modelName = 'gemini-1.5-flash';
+      }
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 1500,
-          temperature: 0.7
-        }
-      });
+      let result: any;
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: settings.systemPrompt
+        });
+        result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 1500,
+            temperature: 0.7
+          }
+        });
+      } catch (firstErr: any) {
+        console.warn(`[Composer] Gemini model ${modelName} failed (${firstErr.message}), trying gemini-1.5-flash-latest...`);
+        const fallbackModel = genAI.getGenerativeModel({
+          model: 'gemini-1.5-flash-latest',
+          systemInstruction: settings.systemPrompt
+        });
+        result = await fallbackModel.generateContent({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 1500,
+            temperature: 0.7
+          }
+        });
+      }
 
-      const text = result.response.text();
+      const text = result?.response?.text();
       if (text) {
         return text.trim();
       }

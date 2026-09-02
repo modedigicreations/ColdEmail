@@ -281,23 +281,42 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     }
 
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      let modelName = settings.geminiModel || 'gemini-2.5-flash';
-      if (modelName === 'gemini-2.0-flash') modelName = 'gemini-2.5-flash';
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: systemPrompt
-      });
+      const cleanKey = apiKey.trim();
+      const genAI = new GoogleGenerativeAI(cleanKey);
+      let modelName = settings.geminiModel || 'gemini-1.5-flash';
+      if (modelName === 'gemini-2.0-flash' || modelName === 'gemini-2.5-flash') {
+        modelName = 'gemini-1.5-flash';
+      }
 
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          maxOutputTokens: 4096,
-          temperature: 0.7
-        }
-      });
+      let result: any;
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: systemPrompt
+        });
+        result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: 4096,
+            temperature: 0.7
+          }
+        });
+      } catch (firstErr: any) {
+        console.warn(`[Website Builder] Model ${modelName} failed (${firstErr.message}), trying gemini-1.5-flash-latest...`);
+        const fallbackModel = genAI.getGenerativeModel({
+          model: 'gemini-1.5-flash-latest',
+          systemInstruction: systemPrompt
+        });
+        result = await fallbackModel.generateContent({
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: {
+            maxOutputTokens: 4096,
+            temperature: 0.7
+          }
+        });
+      }
 
-      const text = result.response.text();
+      const text = result?.response?.text();
       if (text) {
         return sanitizeHtmlOutput(text);
       }

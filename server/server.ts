@@ -488,26 +488,53 @@ app.post('/api/settings/test-ai', async (req, res) => {
     }
 
     if (provider === 'gemini') {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      // Map obsolete gemini-2.0-flash to gemini-2.5-flash
-      const candidateModel = (!model || model === 'gemini-2.0-flash') ? 'gemini-2.5-flash' : model;
-      
-      let geminiModel = genAI.getGenerativeModel({ model: candidateModel });
-      let responseText = '';
+      const cleanKey = apiKey.trim();
+
+      // Query Google ModelService to list and verify exact models accessible to this key
       try {
-        const result = await geminiModel.generateContent('Return only "OK".');
-        responseText = result.response.text().trim();
-      } catch (firstErr: any) {
-        // Fallback to gemini-1.5-flash if 2.5 is not enabled for the user's tier
-        if (candidateModel !== 'gemini-1.5-flash') {
-          geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-          const result = await geminiModel.generateContent('Return only "OK".');
-          responseText = result.response.text().trim();
-        } else {
-          throw firstErr;
+        const listRes = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`, {
+          timeout: 15000
+        });
+        const allModels = listRes.data?.models || [];
+        const contentModels: string[] = allModels
+          .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m: any) => m.name.replace(/^models\//, ''));
+
+        if (contentModels.length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: 'API key is valid, but no text generation models are enabled. Ensure Generative Language API is enabled at https://aistudio.google.com/app/apikey.'
+          });
         }
+
+        // Auto-select requested model if in list, or best available active model
+        let chosen = contentModels.find(m => m === model) ||
+                     contentModels.find(m => m === 'gemini-1.5-flash') ||
+                     contentModels.find(m => m.includes('1.5-flash')) ||
+                     contentModels.find(m => m.includes('flash')) ||
+                     contentModels.find(m => m.includes('pro')) ||
+                     contentModels[0];
+
+        const genAI = new GoogleGenerativeAI(cleanKey);
+        const geminiModel = genAI.getGenerativeModel({ model: chosen });
+        const result = await geminiModel.generateContent('Return only "OK".');
+        const responseText = result.response.text().trim();
+
+        return res.json({ 
+          success: true, 
+          message: `Google Gemini connected successfully! Active model: "${chosen}".`,
+          verifiedModel: chosen
+        });
+      } catch (err: any) {
+        const apiError = err.response?.data?.error;
+        if (apiError) {
+          return res.status(400).json({
+            success: false,
+            error: `Google API Error (${apiError.status || apiError.code}): ${apiError.message}`
+          });
+        }
+        return res.status(500).json({ success: false, error: err.message });
       }
-      return res.json({ success: true, message: `Google Gemini connected successfully! (Model: ${geminiModel.model})` });
     } else if (provider === 'deepseek') {
       await axios.post('https://api.deepseek.com/chat/completions', {
         model: 'deepseek-chat',
