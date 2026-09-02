@@ -255,8 +255,12 @@ app.post('/api/leads/automate-all', (req, res) => {
 // Crawl lead website
 app.post('/api/leads/:id/crawl', async (req, res) => {
   try {
-    const lead = db.getLead(req.params.id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
+    if (!lead) return res.status(404).json({ error: 'Lead not found. Please refresh or select a lead.' });
     if (!lead.website) {
       db.updateLead(lead.id, { 
         status: 'failed', 
@@ -283,15 +287,24 @@ app.post('/api/leads/:id/crawl', async (req, res) => {
 // Generate AI Email draft
 app.post('/api/leads/:id/draft', async (req, res) => {
   try {
-    const lead = db.getLead(req.params.id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
+    if (!lead) return res.status(404).json({ error: 'Lead not found. Please refresh or select a lead.' });
 
-    const settings = db.getSettings();
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
     const draft = await generateColdEmail(lead, settings);
 
     const updated = db.updateLead(lead.id, {
       emailDraft: draft,
-      status: 'drafted'
+      status: 'drafted',
+      error: undefined
     });
 
     res.json(updated);
@@ -301,29 +314,39 @@ app.post('/api/leads/:id/draft', async (req, res) => {
   }
 });
 
-// Send cold email via Gmail
+// Send cold email via Gmail / Resend
 app.post('/api/leads/:id/send', async (req, res) => {
-  const { subject } = req.body;
-  if (!subject) return res.status(400).json({ error: 'Subject is required' });
+  const { subject, body } = req.body;
 
   try {
-    const lead = db.getLead(req.params.id);
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
-    if (!lead.emailDraft) return res.status(400).json({ error: 'Email draft is not generated yet' });
+
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
+    const emailBody = body || lead.emailDraft;
+    if (!emailBody) return res.status(400).json({ error: 'Email draft is not generated yet' });
     if (!lead.email) return res.status(400).json({ error: 'Lead email address is missing' });
 
-    const settings = db.getSettings();
     db.updateLead(lead.id, { status: 'sending', error: undefined });
 
     await sendColdEmail({
       to: lead.email,
-      subject,
-      body: lead.emailDraft
+      subject: subject || `Website Redesign Demo for ${lead.name}`,
+      body: emailBody
     }, settings);
 
     const updated = db.updateLead(lead.id, {
       status: 'sent',
-      sentAt: new Date().toISOString()
+      sentAt: new Date().toISOString(),
+      error: undefined
     });
 
     res.json(updated);
@@ -336,17 +359,26 @@ app.post('/api/leads/:id/send', async (req, res) => {
 // Create Subdomain on hosting dashboard for lead
 app.post('/api/leads/:id/create-subdomain', async (req, res) => {
   try {
-    const lead = db.getLead(req.params.id);
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
-    const settings = db.getSettings();
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
     const result = await createLeadSubdomain(lead, settings);
 
     if (result.success) {
       const updated = db.updateLead(lead.id, {
         subdomain: result.subdomain,
         demoSiteUrl: result.url,
-        siteStatus: 'subdomain_created'
+        siteStatus: 'subdomain_created',
+        error: undefined
       });
       res.json(updated);
     } else {
@@ -360,16 +392,25 @@ app.post('/api/leads/:id/create-subdomain', async (req, res) => {
 // Generate AI website HTML
 app.post('/api/leads/:id/generate-site', async (req, res) => {
   try {
-    const lead = db.getLead(req.params.id);
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
-    const settings = db.getSettings();
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
     db.updateLead(lead.id, { siteStatus: 'building' });
 
     const html = await generateWebsiteHtml(lead, settings);
     const updated = db.updateLead(lead.id, {
       demoSiteHtml: html,
-      siteStatus: 'building'
+      siteStatus: 'building',
+      error: undefined
     });
 
     res.json(updated);
@@ -382,11 +423,19 @@ app.post('/api/leads/:id/generate-site', async (req, res) => {
 // Deploy website to subdomain
 app.post('/api/leads/:id/deploy-site', async (req, res) => {
   try {
-    const lead = db.getLead(req.params.id);
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!lead.demoSiteHtml) return res.status(400).json({ error: 'Website HTML has not been generated yet' });
 
-    const settings = db.getSettings();
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
     const subdomain = lead.subdomain || (await createLeadSubdomain(lead, settings)).subdomain;
 
     const result = await deployLeadWebsite(subdomain, lead.demoSiteHtml, settings);
@@ -395,7 +444,8 @@ app.post('/api/leads/:id/deploy-site', async (req, res) => {
         subdomain,
         demoSiteUrl: result.url,
         siteStatus: 'deployed',
-        status: 'site_ready'
+        status: 'site_ready',
+        error: undefined
       });
       res.json(updated);
     } else {
@@ -409,11 +459,19 @@ app.post('/api/leads/:id/deploy-site', async (req, res) => {
 // Build & Deploy All-in-One for a single lead
 app.post('/api/leads/:id/build-and-deploy', async (req, res) => {
   try {
-    const lead = db.getLead(req.params.id);
-    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
+    if (!lead) return res.status(404).json({ error: 'Lead not found. Please refresh or select a lead.' });
 
-    const settings = db.getSettings();
-    db.updateLead(lead.id, { siteStatus: 'building' });
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
+    db.updateLead(lead.id, { siteStatus: 'building', error: undefined });
 
     // 1. Subdomain
     const subRes = await createLeadSubdomain(lead, settings);
@@ -430,7 +488,8 @@ app.post('/api/leads/:id/build-and-deploy', async (req, res) => {
       demoSiteHtml: html,
       demoSiteUrl: deployRes.url,
       siteStatus: 'deployed',
-      status: 'site_ready'
+      status: 'site_ready',
+      error: undefined
     });
 
     res.json(updated);

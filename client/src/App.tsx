@@ -434,7 +434,12 @@ export default function App() {
   const crawlLead = async (id: string) => {
     setLoadingLeadId(id);
     try {
-      const res = await fetch(`${API_BASE}/leads/${id}/crawl`, { method: 'POST' });
+      const leadData = leads.find(l => l.id === id);
+      const res = await fetch(`${API_BASE}/leads/${id}/crawl`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead: leadData, settings })
+      });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Crawl failed');
@@ -454,7 +459,12 @@ export default function App() {
     setIsBuildingSiteId(id);
     showMsg('Allocating subdomain, building AI website, and deploying...', 'success');
     try {
-      const res = await fetch(`${API_BASE}/leads/${id}/build-and-deploy`, { method: 'POST' });
+      const leadData = leads.find(l => l.id === id);
+      const res = await fetch(`${API_BASE}/leads/${id}/build-and-deploy`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead: leadData, settings })
+      });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'Website build failed');
@@ -474,7 +484,12 @@ export default function App() {
   const draftLead = async (id: string) => {
     setLoadingLeadId(id);
     try {
-      const res = await fetch(`${API_BASE}/leads/${id}/draft`, { method: 'POST' });
+      const leadData = leads.find(l => l.id === id);
+      const res = await fetch(`${API_BASE}/leads/${id}/draft`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead: leadData, settings })
+      });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'AI draft generation failed');
@@ -530,7 +545,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/leads/${id}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject: resolvedSubject })
+        body: JSON.stringify({ subject: resolvedSubject, lead, settings })
       });
       if (!res.ok) {
         const err = await res.json();
@@ -1751,6 +1766,27 @@ export default function App() {
                     <Mail size={14} /> Cold Outreach Email
                   </button>
                 </div>
+
+                {/* Lead Pipeline Notice / Error Alert */}
+                {selectedLead.error && (
+                  <div style={{ 
+                    padding: '10px 14px', 
+                    marginBottom: '14px', 
+                    borderRadius: '6px', 
+                    background: 'rgba(239, 68, 68, 0.12)', 
+                    border: '1px solid rgba(239, 68, 68, 0.3)', 
+                    color: '#f87171', 
+                    fontSize: '12px', 
+                    display: 'flex', 
+                    alignItems: 'flex-start', 
+                    gap: '8px' 
+                  }}>
+                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <strong>Action Error:</strong> {selectedLead.error}
+                    </div>
+                  </div>
+                )}
 
                 {/* TAB 1: Live Demo Website */}
                 {leadDrawerTab === 'website' && (
