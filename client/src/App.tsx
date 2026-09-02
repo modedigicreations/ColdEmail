@@ -887,12 +887,12 @@ export default function App() {
                     <label>Gemini Model</label>
                     <select 
                       className="form-control"
-                      value={settings.geminiModel || 'gemini-1.5-flash'}
+                      value={settings.geminiModel || 'gemini-2.5-flash'}
                       onChange={e => setSettings({ ...settings, geminiModel: e.target.value })}
                     >
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Ultra Fast & Balanced)</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning & Quality)</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Next-Gen)</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Next-Gen Recommended)</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Fast & Reliable)</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning & Complex Prompts)</option>
                     </select>
                   </div>
                 </div>
@@ -1043,10 +1043,13 @@ export default function App() {
                         className="form-control" 
                         value={settings.cpanelApiToken || ''}
                         onChange={e => setSettings({ ...settings, cpanelApiToken: e.target.value })}
-                        placeholder="Generated in cPanel -> Manage API Tokens"
+                        placeholder="API Token or cPanel Password"
                       />
                     </div>
                   </div>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: 0 }}>
+                    💡 <strong>Tips:</strong> 1) Host URL must be without a trailing slash (e.g. <code>https://macedigital.co.uk:2083</code>). 2) You can enter either your <strong>cPanel API Token</strong> or your <strong>cPanel account password</strong>.
+                  </p>
                   {cpanelTestResult && (
                     <div style={{ 
                       marginTop: '12px', 

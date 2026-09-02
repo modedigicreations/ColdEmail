@@ -489,10 +489,25 @@ app.post('/api/settings/test-ai', async (req, res) => {
 
     if (provider === 'gemini') {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
-      const result = await geminiModel.generateContent('Return only the word "OK".');
-      const responseText = result.response.text().trim();
-      return res.json({ success: true, message: `Google Gemini connected successfully! (Response: "${responseText}")` });
+      // Map obsolete gemini-2.0-flash to gemini-2.5-flash
+      const candidateModel = (!model || model === 'gemini-2.0-flash') ? 'gemini-2.5-flash' : model;
+      
+      let geminiModel = genAI.getGenerativeModel({ model: candidateModel });
+      let responseText = '';
+      try {
+        const result = await geminiModel.generateContent('Return only "OK".');
+        responseText = result.response.text().trim();
+      } catch (firstErr: any) {
+        // Fallback to gemini-1.5-flash if 2.5 is not enabled for the user's tier
+        if (candidateModel !== 'gemini-1.5-flash') {
+          geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+          const result = await geminiModel.generateContent('Return only "OK".');
+          responseText = result.response.text().trim();
+        } else {
+          throw firstErr;
+        }
+      }
+      return res.json({ success: true, message: `Google Gemini connected successfully! (Model: ${geminiModel.model})` });
     } else if (provider === 'deepseek') {
       await axios.post('https://api.deepseek.com/chat/completions', {
         model: 'deepseek-chat',
@@ -539,23 +554,49 @@ app.post('/api/settings/test-cpanel', async (req, res) => {
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
       host = 'https://' + host;
     }
+    host = host.replace(/\/+$/, '');
     if (!host.includes(':2083') && !host.includes(':2082') && !host.includes('cpanel.')) {
       host = `${host}:2083`;
     }
+    host = host.replace(/\/+$/, '');
 
-    const endpoint = `${host}/execute/DomainLookup/get_basedir_for_domains`;
-    const response = await axios.get(endpoint, {
-      headers: {
-        'Authorization': `cpanel ${user}:${token}`
-      },
-      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-      timeout: 15000
-    });
+    const endpoint = `${host}/execute/SubDomain/get_subdomains`;
+    
+    let response;
+    let authMethod = 'cPanel API Token';
+    try {
+      response = await axios.get(endpoint, {
+        headers: {
+          'Authorization': `cpanel ${user}:${token}`
+        },
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        timeout: 15000
+      });
+    } catch (apiErr: any) {
+      // If 401 or 403, try Basic Auth (in case user entered their cPanel password)
+      if (apiErr.response?.status === 401 || apiErr.response?.status === 403) {
+        try {
+          const basicAuth = Buffer.from(`${user}:${token}`).toString('base64');
+          response = await axios.get(endpoint, {
+            headers: {
+              'Authorization': `Basic ${basicAuth}`
+            },
+            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+            timeout: 15000
+          });
+          authMethod = 'cPanel Password';
+        } catch (basicErr: any) {
+          throw apiErr;
+        }
+      } else {
+        throw apiErr;
+      }
+    }
 
-    if (response.data && (response.data.status === 1 || response.data.errors === null)) {
+    if (response.data && (response.data.status === 1 || Array.isArray(response.data.data))) {
       return res.json({ 
         success: true, 
-        message: `cPanel connection successful! Authenticated as "${user}".` 
+        message: `cPanel connection verified (${authMethod})! Authenticated as "${user}". Subdomain management is ready.` 
       });
     } else {
       const errorMsg = response.data.errors ? response.data.errors.join(', ') : 'cPanel authentication rejected';
@@ -565,9 +606,14 @@ app.post('/api/settings/test-cpanel', async (req, res) => {
       });
     }
   } catch (error: any) {
+    const status = error.response?.status;
+    let hint = '';
+    if (status === 403 || status === 401) {
+      hint = ' (Check: 1. Ensure the token has "Subdomains" and "File Storage" privileges in cPanel -> Manage API Tokens. 2. Or if using your cPanel password, verify username & password. 3. Try https://macedigital.co.uk:2083 without trailing slashes).';
+    }
     return res.status(500).json({ 
       success: false, 
-      error: `Could not connect to cPanel: ${error.message}. Please check host URL and ensure port 2083 is reachable.` 
+      error: `Could not connect to cPanel: ${error.response?.data?.errors?.join(', ') || error.message}.${hint}` 
     });
   }
 });

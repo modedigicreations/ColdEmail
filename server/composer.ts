@@ -47,7 +47,8 @@ Conclude the email using the provided contact details and email signature. Do no
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const modelName = settings.geminiModel || 'gemini-1.5-flash';
+      let modelName = settings.geminiModel || 'gemini-2.5-flash';
+      if (modelName === 'gemini-2.0-flash') modelName = 'gemini-2.5-flash';
       const model = genAI.getGenerativeModel({
         model: modelName,
         systemInstruction: settings.systemPrompt

@@ -7,25 +7,67 @@ import { DeployResult, HostingAdapter, SubdomainResult } from './types.js';
 const insecureHttpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 export class CpanelAdapter implements HostingAdapter {
-  private getHeaders(settings: Settings) {
-    const user = settings.cpanelUser?.trim();
-    const token = settings.cpanelApiToken?.trim();
-    return {
-      'Authorization': `cpanel ${user}:${token}`
-    };
-  }
-
   private getHostUrl(settings: Settings): string {
     let host = (settings.cpanelHost || '').trim();
     if (!host) return '';
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
       host = 'https://' + host;
     }
+    host = host.replace(/\/+$/, '');
     // Default cPanel port is 2083
     if (!host.includes(':2083') && !host.includes(':2082') && !host.includes('cpanel.')) {
       host = `${host}:2083`;
     }
-    return host;
+    return host.replace(/\/+$/, '');
+  }
+
+  private async executeUapi(endpoint: string, method: 'GET' | 'POST', dataOrParams: any, settings: Settings, isForm = false) {
+    const user = (settings.cpanelUser || '').trim();
+    const token = (settings.cpanelApiToken || '').trim();
+
+    // 1. Try standard cPanel API Token authorization
+    try {
+      const config: any = {
+        headers: {
+          'Authorization': `cpanel ${user}:${token}`
+        },
+        httpsAgent: insecureHttpsAgent,
+        timeout: 25000
+      };
+      if (isForm) {
+        config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      }
+
+      if (method === 'GET') {
+        config.params = dataOrParams;
+        return await axios.get(endpoint, config);
+      } else {
+        return await axios.post(endpoint, dataOrParams, config);
+      }
+    } catch (apiErr: any) {
+      // 2. If 401 or 403, fallback to Basic Auth in case the user entered their cPanel password
+      if (apiErr.response?.status === 401 || apiErr.response?.status === 403) {
+        const basicAuth = Buffer.from(`${user}:${token}`).toString('base64');
+        const config: any = {
+          headers: {
+            'Authorization': `Basic ${basicAuth}`
+          },
+          httpsAgent: insecureHttpsAgent,
+          timeout: 25000
+        };
+        if (isForm) {
+          config.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        }
+
+        if (method === 'GET') {
+          config.params = dataOrParams;
+          return await axios.get(endpoint, config);
+        } else {
+          return await axios.post(endpoint, dataOrParams, config);
+        }
+      }
+      throw apiErr;
+    }
   }
 
   async createSubdomain(subdomain: string, settings: Settings): Promise<SubdomainResult> {
@@ -42,16 +84,11 @@ export class CpanelAdapter implements HostingAdapter {
 
     try {
       const endpoint = `${host}/execute/SubDomain/addsubdomain`;
-      const response = await axios.get(endpoint, {
-        params: {
-          domain: subdomain,
-          rootdomain: baseDomain,
-          dir: `public_html/${subdomain}`
-        },
-        headers: this.getHeaders(settings),
-        httpsAgent: insecureHttpsAgent,
-        timeout: 20000
-      });
+      const response = await this.executeUapi(endpoint, 'GET', {
+        domain: subdomain,
+        rootdomain: baseDomain,
+        dir: `public_html/${subdomain}`
+      }, settings);
 
       const data = response.data;
       if (data.status === 1 || (data.errors && data.errors[0]?.includes('already exists'))) {
@@ -101,14 +138,7 @@ export class CpanelAdapter implements HostingAdapter {
       form.append('filename', 'index.html');
       form.append('content', html);
 
-      const response = await axios.post(endpoint, form.toString(), {
-        headers: {
-          ...this.getHeaders(settings),
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        httpsAgent: insecureHttpsAgent,
-        timeout: 25000
-      });
+      const response = await this.executeUapi(endpoint, 'POST', form.toString(), settings, true);
 
       if (response.data.status === 1) {
         const fullUrl = `https://${subdomain}.${baseDomain}`;
