@@ -1,4 +1,5 @@
 import { Anthropic } from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import { Lead, Settings } from './db.js';
 
@@ -272,7 +273,39 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
   `.trim();
 
   // Try AI generation
-  if (provider === 'deepseek') {
+  if (provider === 'gemini') {
+    const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn('[Website Builder] Gemini API key not provided. Using responsive fallback template.');
+      return generateFallbackTemplate(lead, baseDomain);
+    }
+
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const modelName = settings.geminiModel || 'gemini-1.5-flash';
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: systemPrompt
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          maxOutputTokens: 4096,
+          temperature: 0.7
+        }
+      });
+
+      const text = result.response.text();
+      if (text) {
+        return sanitizeHtmlOutput(text);
+      }
+      return generateFallbackTemplate(lead, baseDomain);
+    } catch (err: any) {
+      console.error('[Website Builder] Gemini generation error:', err.message);
+      return generateFallbackTemplate(lead, baseDomain);
+    }
+  } else if (provider === 'deepseek') {
     const apiKey = settings.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
       console.warn('[Website Builder] DeepSeek API key not provided. Using responsive fallback template.');

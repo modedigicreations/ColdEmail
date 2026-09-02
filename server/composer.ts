@@ -1,4 +1,5 @@
 import { Anthropic } from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import { Lead, Settings } from './db.js';
 
@@ -38,7 +39,38 @@ Keep the email under 150 words, conversational, respectful, and close with a low
 Conclude the email using the provided contact details and email signature. Do not output any placeholders or brackets.
   `.trim();
 
-  if (provider === 'deepseek') {
+  if (provider === 'gemini') {
+    const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Google Gemini API key is not configured. Please set it in Settings.');
+    }
+
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const modelName = settings.geminiModel || 'gemini-1.5-flash';
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: settings.systemPrompt
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: 1500,
+          temperature: 0.7
+        }
+      });
+
+      const text = result.response.text();
+      if (text) {
+        return text.trim();
+      }
+      throw new Error('Unexpected empty response from Google Gemini API');
+    } catch (error: any) {
+      console.error('Gemini email generation failed:', error.message);
+      throw new Error(`Gemini API Error: ${error.message}`);
+    }
+  } else if (provider === 'deepseek') {
     const apiKey = settings.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
       throw new Error('DeepSeek API key is not configured. Please set it in Settings.');

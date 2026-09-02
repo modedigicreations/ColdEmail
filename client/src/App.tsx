@@ -34,9 +34,11 @@ interface Lead {
 }
 
 interface Settings {
-  aiProvider: 'claude' | 'deepseek';
+  aiProvider: 'claude' | 'deepseek' | 'gemini';
   anthropicApiKey: string;
   deepseekApiKey: string;
+  geminiApiKey?: string;
+  geminiModel?: string;
   emailProvider: 'gmail' | 'resend';
   gmailEmail: string;
   gmailAppPassword: string;
@@ -66,6 +68,8 @@ export default function App() {
     aiProvider: 'claude',
     anthropicApiKey: '',
     deepseekApiKey: '',
+    geminiApiKey: '',
+    geminiModel: 'gemini-1.5-flash',
     emailProvider: 'gmail',
     gmailEmail: '',
     gmailAppPassword: '',
@@ -260,6 +264,67 @@ export default function App() {
       localStorage.setItem('coldreach_settings', JSON.stringify(settings));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [testingCpanel, setTestingCpanel] = useState(false);
+  const [cpanelTestResult, setCpanelTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTestAi = async () => {
+    setTestingAi(true);
+    setAiTestResult(null);
+    try {
+      const apiKey = settings.aiProvider === 'gemini' ? settings.geminiApiKey :
+                     settings.aiProvider === 'deepseek' ? settings.deepseekApiKey :
+                     settings.anthropicApiKey;
+      const res = await fetch(`${API_BASE}/settings/test-ai`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: settings.aiProvider,
+          apiKey,
+          model: settings.geminiModel
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setAiTestResult({ success: true, message: data.message });
+      } else {
+        setAiTestResult({ success: false, message: data.error || 'Connection test failed.' });
+      }
+    } catch (err: any) {
+      setAiTestResult({ success: false, message: err.message });
+    } finally {
+      setTestingAi(false);
+    }
+  };
+
+  const handleTestCpanel = async () => {
+    setTestingCpanel(true);
+    setCpanelTestResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/settings/test-cpanel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cpanelHost: settings.cpanelHost,
+          cpanelUser: settings.cpanelUser,
+          cpanelApiToken: settings.cpanelApiToken
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setCpanelTestResult({ success: true, message: data.message });
+      } else {
+        setCpanelTestResult({ success: false, message: data.error || 'Connection test failed.' });
+      }
+    } catch (err: any) {
+      setCpanelTestResult({ success: false, message: err.message });
+    } finally {
+      setTestingCpanel(false);
     }
   };
 
@@ -753,7 +818,16 @@ export default function App() {
                 <Cpu size={18} color="var(--primary)" /> AI Copywriter & Web Designer Provider
               </h3>
               <div className="form-group">
-                <div style={{ display: 'flex', gap: '20px', marginTop: '6px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '6px', marginBottom: '16px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
+                    <input 
+                      type="radio" 
+                      name="aiProvider"
+                      checked={settings.aiProvider === 'gemini'}
+                      onChange={() => setSettings({ ...settings, aiProvider: 'gemini' })}
+                    />
+                    Google Gemini (Recommended / Fast)
+                  </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
                     <input 
                       type="radio" 
@@ -761,7 +835,7 @@ export default function App() {
                       checked={settings.aiProvider === 'claude'}
                       onChange={() => setSettings({ ...settings, aiProvider: 'claude' })}
                     />
-                    Claude AI (Anthropic - Recommended)
+                    Claude 3.5 Sonnet (Anthropic)
                   </label>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
                     <input 
@@ -770,32 +844,125 @@ export default function App() {
                       checked={settings.aiProvider === 'deepseek'}
                       onChange={() => setSettings({ ...settings, aiProvider: 'deepseek' })}
                     />
-                    DeepSeek AI
+                    DeepSeek V3 / R1
                   </label>
                 </div>
               </div>
 
-              {settings.aiProvider === 'claude' ? (
+              {settings.aiProvider === 'gemini' && (
+                <div>
+                  <div className="form-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label>Google Gemini API Key</label>
+                      <a 
+                        href="https://aistudio.google.com/app/apikey" 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        style={{ fontSize: '12px', color: 'var(--info)', textDecoration: 'none' }}
+                      >
+                        Get free API key at Google AI Studio &rarr;
+                      </a>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input 
+                        type="password" 
+                        className="form-control" 
+                        value={settings.geminiApiKey || ''}
+                        onChange={e => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                        placeholder="AIzaSy..."
+                        style={{ flex: 1 }}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary"
+                        onClick={handleTestAi}
+                        disabled={testingAi || !settings.geminiApiKey}
+                        style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                      >
+                        {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ maxWidth: '300px' }}>
+                    <label>Gemini Model</label>
+                    <select 
+                      className="form-control"
+                      value={settings.geminiModel || 'gemini-1.5-flash'}
+                      onChange={e => setSettings({ ...settings, geminiModel: e.target.value })}
+                    >
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Ultra Fast & Balanced)</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning & Quality)</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Next-Gen)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {settings.aiProvider === 'claude' && (
                 <div className="form-group">
                   <label>Claude Anthropic API Key</label>
-                  <input 
-                    type="password" 
-                    className="form-control" 
-                    value={settings.anthropicApiKey}
-                    onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
-                    placeholder="sk-ant-..."
-                  />
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      value={settings.anthropicApiKey}
+                      onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
+                      placeholder="sk-ant-..."
+                      style={{ flex: 1 }}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={handleTestAi}
+                      disabled={testingAi || !settings.anthropicApiKey}
+                      style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                    >
+                      {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
+                    </button>
+                  </div>
                 </div>
-              ) : (
+              )}
+
+              {settings.aiProvider === 'deepseek' && (
                 <div className="form-group">
                   <label>DeepSeek API Key</label>
-                  <input 
-                    type="password" 
-                    className="form-control" 
-                    value={settings.deepseekApiKey}
-                    onChange={e => setSettings({ ...settings, deepseekApiKey: e.target.value })}
-                    placeholder="sk-..."
-                  />
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      value={settings.deepseekApiKey}
+                      onChange={e => setSettings({ ...settings, deepseekApiKey: e.target.value })}
+                      placeholder="sk-..."
+                      style={{ flex: 1 }}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={handleTestAi}
+                      disabled={testingAi || !settings.deepseekApiKey}
+                      style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                    >
+                      {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {aiTestResult && (
+                <div style={{ 
+                  marginTop: '10px', 
+                  padding: '8px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '12px',
+                  background: aiTestResult.success ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                  border: `1px solid ${aiTestResult.success ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                  color: aiTestResult.success ? '#4ade80' : '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  {aiTestResult.success ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+                  {aiTestResult.message}
                 </div>
               )}
             </div>
@@ -836,7 +1003,18 @@ export default function App() {
 
               {settings.hostingProvider === 'cpanel' && (
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
-                  <h4 style={{ fontSize: '14px', marginBottom: '12px', color: 'var(--text-main)' }}>cPanel API Connection</h4>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ fontSize: '14px', margin: 0, color: 'var(--text-main)' }}>cPanel API Connection</h4>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={handleTestCpanel}
+                      disabled={testingCpanel || !settings.cpanelHost || !settings.cpanelUser || !settings.cpanelApiToken}
+                      style={{ padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      {testingCpanel ? <RefreshCw size={12} className="spin" /> : <Play size={12} />} Test cPanel Connection
+                    </button>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                     <div>
                       <label style={{ fontSize: '12px' }}>cPanel Host URL</label>
@@ -845,7 +1023,7 @@ export default function App() {
                         className="form-control" 
                         value={settings.cpanelHost || ''}
                         onChange={e => setSettings({ ...settings, cpanelHost: e.target.value })}
-                        placeholder="https://cpanel.yourdomain.com:2083"
+                        placeholder="https://macedigital.co.uk:2083"
                       />
                     </div>
                     <div>
@@ -869,6 +1047,23 @@ export default function App() {
                       />
                     </div>
                   </div>
+                  {cpanelTestResult && (
+                    <div style={{ 
+                      marginTop: '12px', 
+                      padding: '8px 12px', 
+                      borderRadius: '6px', 
+                      fontSize: '12px',
+                      background: cpanelTestResult.success ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                      border: `1px solid ${cpanelTestResult.success ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+                      color: cpanelTestResult.success ? '#4ade80' : '#f87171',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      {cpanelTestResult.success ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+                      {cpanelTestResult.message}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1472,11 +1667,26 @@ export default function App() {
                     />
                   </div>
                   {selectedLead.demoSiteUrl && (
-                    <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <strong>Demo Site:</strong>
-                      <a href={selectedLead.demoSiteUrl} target="_blank" rel="noreferrer" style={{ color: '#c084fc', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
-                        {selectedLead.subdomain} <ExternalLink size={12} />
-                      </a>
+                    <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+                      <div>
+                        <strong>Subdomain:</strong>{' '}
+                        <a href={selectedLead.demoSiteUrl} target="_blank" rel="noreferrer" style={{ color: '#c084fc', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
+                          {selectedLead.subdomain} <ExternalLink size={12} />
+                        </a>
+                      </div>
+                      {selectedLead.demoSiteHtml && (
+                        <div>
+                          <a 
+                            href={`${API_BASE.replace(/\/api$/, '')}/demo/${selectedLead.id}`} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            style={{ color: 'var(--info)', fontSize: '11px', textDecoration: 'none', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            title="Direct link works immediately even if DNS is still propagating"
+                          >
+                            Direct Server Link <ExternalLink size={10} />
+                          </a>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

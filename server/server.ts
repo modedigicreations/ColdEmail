@@ -2,6 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import dotenv from 'dotenv';
+import axios from 'axios';
+import https from 'https';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { Anthropic } from '@anthropic-ai/sdk';
 import { db } from './db.js';
 import { crawlWebsite, parseLeadsGorillaCSV, scrapeLeadsGorilla } from './scraper.js';
 import { generateColdEmail } from './composer.js';
@@ -453,6 +457,118 @@ app.get('/api/leads/:id/site-preview', (req, res) => {
     res.send('<!DOCTYPE html><html><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>No demo website generated for this lead yet.</h3></body></html>');
   } catch (error: any) {
     res.status(500).send(`Preview error: ${error.message}`);
+  }
+});
+
+// Direct full-screen live demo site preview route
+app.get('/demo/:subdomainOrId', (req, res) => {
+  try {
+    const param = req.params.subdomainOrId;
+    const leads = db.getLeads();
+    const lead = leads.find(l => l.id === param || l.subdomain === param);
+    if (!lead || !lead.demoSiteHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(404).send('<!DOCTYPE html><html><body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>Demo website not found or still generating.</h3></body></html>');
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.removeHeader('X-Frame-Options');
+    return res.send(lead.demoSiteHtml);
+  } catch (err: any) {
+    res.status(500).send(`Demo error: ${err.message}`);
+  }
+});
+
+// Test AI Provider Connection
+app.post('/api/settings/test-ai', async (req, res) => {
+  try {
+    const { provider, apiKey, model } = req.body;
+    if (!apiKey) {
+      return res.status(400).json({ success: false, error: 'Please enter an API key to test.' });
+    }
+
+    if (provider === 'gemini') {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
+      const result = await geminiModel.generateContent('Return only the word "OK".');
+      const responseText = result.response.text().trim();
+      return res.json({ success: true, message: `Google Gemini connected successfully! (Response: "${responseText}")` });
+    } else if (provider === 'deepseek') {
+      await axios.post('https://api.deepseek.com/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: 'Return only "OK"' }],
+        max_tokens: 5
+      }, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        timeout: 15000
+      });
+      return res.json({ success: true, message: 'DeepSeek API connection verified successfully!' });
+    } else {
+      // Claude
+      const anthropic = new Anthropic({ apiKey });
+      await anthropic.messages.create({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'Return only "OK"' }]
+      });
+      return res.json({ success: true, message: 'Anthropic Claude connected successfully!' });
+    }
+  } catch (error: any) {
+    return res.status(500).json({ 
+      success: false, 
+      error: error.response?.data?.error?.message || error.message 
+    });
+  }
+});
+
+// Test cPanel UAPI Connection
+app.post('/api/settings/test-cpanel', async (req, res) => {
+  try {
+    const settings = { ...db.getSettings(), ...req.body };
+    let host = (settings.cpanelHost || '').trim();
+    const user = settings.cpanelUser?.trim();
+    const token = settings.cpanelApiToken?.trim();
+
+    if (!host || !user || !token) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Please enter cPanel Host URL, Username, and API Token.' 
+      });
+    }
+
+    if (!host.startsWith('http://') && !host.startsWith('https://')) {
+      host = 'https://' + host;
+    }
+    if (!host.includes(':2083') && !host.includes(':2082') && !host.includes('cpanel.')) {
+      host = `${host}:2083`;
+    }
+
+    const endpoint = `${host}/execute/DomainLookup/get_basedir_for_domains`;
+    const response = await axios.get(endpoint, {
+      headers: {
+        'Authorization': `cpanel ${user}:${token}`
+      },
+      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      timeout: 15000
+    });
+
+    if (response.data && (response.data.status === 1 || response.data.errors === null)) {
+      return res.json({ 
+        success: true, 
+        message: `cPanel connection successful! Authenticated as "${user}".` 
+      });
+    } else {
+      const errorMsg = response.data.errors ? response.data.errors.join(', ') : 'cPanel authentication rejected';
+      return res.status(400).json({ 
+        success: false, 
+        error: `cPanel rejected request: ${errorMsg}` 
+      });
+    }
+  } catch (error: any) {
+    return res.status(500).json({ 
+      success: false, 
+      error: `Could not connect to cPanel: ${error.message}. Please check host URL and ensure port 2083 is reachable.` 
+    });
   }
 });
 
