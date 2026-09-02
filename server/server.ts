@@ -609,58 +609,68 @@ app.post('/api/settings/test-cpanel', async (req, res) => {
 
     const endpoint = `${host}/execute/SubDomain/get_subdomains`;
     
-    let response;
+    // 1. First probe cPanel UAPI on port 2083
+    let cpanelResponse: any = null;
     let authMethod = 'cPanel API Token';
+    let lastError: any = null;
+
     try {
-      response = await axios.get(endpoint, {
+      cpanelResponse = await axios.get(endpoint, {
         headers: {
           'Authorization': `cpanel ${user}:${token}`
         },
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-        timeout: 15000
+        timeout: 12000
       });
     } catch (apiErr: any) {
-      // If 401 or 403, try Basic Auth (in case user entered their cPanel password)
-      if (apiErr.response?.status === 401 || apiErr.response?.status === 403) {
-        try {
-          const basicAuth = Buffer.from(`${user}:${token}`).toString('base64');
-          response = await axios.get(endpoint, {
-            headers: {
-              'Authorization': `Basic ${basicAuth}`
-            },
-            httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-            timeout: 15000
+      lastError = apiErr;
+    }
+
+    // 2. If port 2083 failed with 401 or 403, test if this is a WHM administrative token on port 2087
+    if (!cpanelResponse && (lastError?.response?.status === 401 || lastError?.response?.status === 403)) {
+      try {
+        const whmHost = host.replace(/:\d+$/, '') + ':2087';
+        const whmEndpoint = `${whmHost}/json-api/version?api.version=1`;
+        const whmRes = await axios.get(whmEndpoint, {
+          headers: {
+            'Authorization': `whm ${user}:${token}`
+          },
+          httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+          timeout: 10000
+        });
+        if (whmRes.data && whmRes.data.version) {
+          return res.json({
+            success: true,
+            message: `WHM Connection Verified! Authenticated via WHM Administrative API on port 2087 as "${user}".`
           });
-          authMethod = 'cPanel Password';
-        } catch (basicErr: any) {
-          throw apiErr;
         }
-      } else {
-        throw apiErr;
+      } catch (_) {
+        // Fall back to original cPanel error
       }
     }
 
-    if (response.data && (response.data.status === 1 || Array.isArray(response.data.data))) {
+    if (cpanelResponse?.data && (cpanelResponse.data.status === 1 || Array.isArray(cpanelResponse.data.data))) {
       return res.json({ 
         success: true, 
         message: `cPanel connection verified (${authMethod})! Authenticated as "${user}". Subdomain management is ready.` 
       });
     } else {
-      const errorMsg = response.data.errors ? response.data.errors.join(', ') : 'cPanel authentication rejected';
+      const status = lastError?.response?.status || cpanelResponse?.status;
+      let hint = '';
+      if (status === 403 || status === 401) {
+        hint = `cPanel rejected the token with "Access Denied" (HTTP 403). To fix this: Log in to cPanel -> Security -> Manage API Tokens -> click "+ Create API Token" -> ensure "Full Access" or "Subdomains" is checked, and paste the newly generated token.`;
+      } else {
+        hint = lastError?.message || 'cPanel authentication rejected';
+      }
       return res.status(400).json({ 
         success: false, 
-        error: `cPanel rejected request: ${errorMsg}` 
+        error: hint 
       });
     }
   } catch (error: any) {
-    const status = error.response?.status;
-    let hint = '';
-    if (status === 403 || status === 401) {
-      hint = ' (Check: 1. Ensure the token has "Subdomains" and "File Storage" privileges in cPanel -> Manage API Tokens. 2. Or if using your cPanel password, verify username & password. 3. Try https://macedigital.co.uk:2083 without trailing slashes).';
-    }
     return res.status(500).json({ 
       success: false, 
-      error: `Could not connect to cPanel: ${error.response?.data?.errors?.join(', ') || error.message}.${hint}` 
+      error: `Could not connect to cPanel: ${error.response?.data?.errors?.join(', ') || error.message}` 
     });
   }
 });

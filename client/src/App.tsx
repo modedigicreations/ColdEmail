@@ -1050,9 +1050,20 @@ export default function App() {
                       />
                     </div>
                   </div>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: 0 }}>
-                    💡 <strong>Tips:</strong> 1) Host URL must be without a trailing slash (e.g. <code>https://macedigital.co.uk:2083</code>). 2) You can enter either your <strong>cPanel API Token</strong> or your <strong>cPanel account password</strong>.
-                  </p>
+                  <div style={{ marginTop: '10px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.08)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+                    <div style={{ color: 'var(--text-main)', fontWeight: 600, marginBottom: '4px' }}>
+                      🔑 How to generate a valid cPanel API Token:
+                    </div>
+                    <ol style={{ margin: '0 0 8px 16px', padding: 0 }}>
+                      <li>Log in to cPanel at <code>https://macedigital.co.uk:2083</code> with user <code>adeolame</code>.</li>
+                      <li>Go to <strong>Security &rarr; Manage API Tokens</strong> (or search "API Tokens" in cPanel).</li>
+                      <li>Click <strong>+ Create API Token</strong>, name it <code>ColdReach</code>, and check <strong>Full Access</strong> (or select Subdomains & Fileman).</li>
+                      <li>Click <strong>Create</strong>, copy the generated token, and paste it into the field above.</li>
+                    </ol>
+                    <div style={{ color: 'var(--info)' }}>
+                      💡 <em>Note: If you don't want to use cPanel API, simply switch <strong>Hosting Integration Provider</strong> to <strong>"Wildcard Subdomain & Local Static"</strong> above. It works instantly without needing any tokens!</em>
+                    </div>
+                  </div>
                   {cpanelTestResult && (
                     <div style={{ 
                       marginTop: '12px', 
