@@ -507,13 +507,21 @@ app.post('/api/settings/test-ai', async (req, res) => {
           });
         }
 
-        // Auto-select requested model if in list, or best available active model
-        let chosen = contentModels.find(m => m === model) ||
-                     contentModels.find(m => m === 'gemini-1.5-flash') ||
-                     contentModels.find(m => m.includes('1.5-flash')) ||
-                     contentModels.find(m => m.includes('flash')) ||
-                     contentModels.find(m => m.includes('pro')) ||
-                     contentModels[0];
+        // Auto-select model prioritizing gemini-3.6-flash (current generation)
+        let chosen = '';
+        if (model && contentModels.includes(model)) {
+          chosen = model;
+        } else if (contentModels.includes('gemini-3.6-flash')) {
+          chosen = 'gemini-3.6-flash';
+        } else if (contentModels.find(m => m.includes('3.6-flash'))) {
+          chosen = contentModels.find(m => m.includes('3.6-flash'))!;
+        } else if (contentModels.find(m => m.includes('flash'))) {
+          chosen = contentModels.find(m => m.includes('flash'))!;
+        } else if (contentModels.find(m => m.includes('pro'))) {
+          chosen = contentModels.find(m => m.includes('pro'))!;
+        } else {
+          chosen = contentModels[0];
+        }
 
         const genAI = new GoogleGenerativeAI(cleanKey);
         const geminiModel = genAI.getGenerativeModel({ model: chosen });
@@ -526,14 +534,26 @@ app.post('/api/settings/test-ai', async (req, res) => {
           verifiedModel: chosen
         });
       } catch (err: any) {
-        const apiError = err.response?.data?.error;
-        if (apiError) {
-          return res.status(400).json({
-            success: false,
-            error: `Google API Error (${apiError.status || apiError.code}): ${apiError.message}`
+        // Direct fallback attempt with gemini-3.6-flash
+        try {
+          const genAI = new GoogleGenerativeAI(cleanKey);
+          const geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+          const result = await geminiModel.generateContent('Return only "OK".');
+          return res.json({
+            success: true,
+            message: 'Google Gemini connected successfully! (Model: gemini-3.6-flash)',
+            verifiedModel: 'gemini-3.6-flash'
           });
+        } catch (directErr: any) {
+          const apiError = err.response?.data?.error || directErr.response?.data?.error;
+          if (apiError) {
+            return res.status(400).json({
+              success: false,
+              error: `Google API Error (${apiError.status || apiError.code}): ${apiError.message}`
+            });
+          }
+          return res.status(500).json({ success: false, error: directErr.message || err.message });
         }
-        return res.status(500).json({ success: false, error: err.message });
       }
     } else if (provider === 'deepseek') {
       await axios.post('https://api.deepseek.com/chat/completions', {

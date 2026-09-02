@@ -283,9 +283,9 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     try {
       const cleanKey = apiKey.trim();
       const genAI = new GoogleGenerativeAI(cleanKey);
-      let modelName = settings.geminiModel || 'gemini-1.5-flash';
+      let modelName = settings.geminiModel || 'gemini-3.6-flash';
       if (modelName === 'gemini-2.0-flash' || modelName === 'gemini-2.5-flash') {
-        modelName = 'gemini-1.5-flash';
+        modelName = 'gemini-3.6-flash';
       }
 
       let result: any;
@@ -302,9 +302,9 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
           }
         });
       } catch (firstErr: any) {
-        console.warn(`[Website Builder] Model ${modelName} failed (${firstErr.message}), trying gemini-1.5-flash-latest...`);
+        console.warn(`[Website Builder] Model ${modelName} failed (${firstErr.message}), trying gemini-3.6-flash...`);
         const fallbackModel = genAI.getGenerativeModel({
-          model: 'gemini-1.5-flash-latest',
+          model: 'gemini-3.6-flash',
           systemInstruction: systemPrompt
         });
         result = await fallbackModel.generateContent({

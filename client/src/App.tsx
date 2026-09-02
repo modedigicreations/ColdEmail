@@ -886,17 +886,16 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <div className="form-group" style={{ maxWidth: '320px' }}>
+                  <div className="form-group" style={{ maxWidth: '340px' }}>
                     <label>Gemini Model</label>
                     <select 
                       className="form-control"
-                      value={settings.geminiModel || 'gemini-1.5-flash'}
+                      value={settings.geminiModel || 'gemini-3.6-flash'}
                       onChange={e => setSettings({ ...settings, geminiModel: e.target.value })}
                     >
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recommended / Default)</option>
-                      <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash Latest</option>
+                      <option value="gemini-3.6-flash">Gemini 3.6 Flash (Recommended / Latest)</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                       <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning)</option>
-                      <option value="gemini-pro">Gemini Pro</option>
                     </select>
                   </div>
                 </div>

@@ -48,9 +48,9 @@ Conclude the email using the provided contact details and email signature. Do no
     try {
       const cleanKey = apiKey.trim();
       const genAI = new GoogleGenerativeAI(cleanKey);
-      let modelName = settings.geminiModel || 'gemini-1.5-flash';
+      let modelName = settings.geminiModel || 'gemini-3.6-flash';
       if (modelName === 'gemini-2.0-flash' || modelName === 'gemini-2.5-flash') {
-        modelName = 'gemini-1.5-flash';
+        modelName = 'gemini-3.6-flash';
       }
 
       let result: any;
@@ -67,9 +67,9 @@ Conclude the email using the provided contact details and email signature. Do no
           }
         });
       } catch (firstErr: any) {
-        console.warn(`[Composer] Gemini model ${modelName} failed (${firstErr.message}), trying gemini-1.5-flash-latest...`);
+        console.warn(`[Composer] Gemini model ${modelName} failed (${firstErr.message}), trying gemini-3.6-flash...`);
         const fallbackModel = genAI.getGenerativeModel({
-          model: 'gemini-1.5-flash-latest',
+          model: 'gemini-3.6-flash',
           systemInstruction: settings.systemPrompt
         });
         result = await fallbackModel.generateContent({

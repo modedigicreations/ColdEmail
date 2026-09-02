@@ -64,7 +64,7 @@ const DEFAULT_SETTINGS: Settings = {
   anthropicApiKey: '',
   deepseekApiKey: '',
   geminiApiKey: '',
-  geminiModel: 'gemini-1.5-flash',
+  geminiModel: 'gemini-3.6-flash',
   emailProvider: 'gmail',
   gmailEmail: '',
   gmailAppPassword: '',
