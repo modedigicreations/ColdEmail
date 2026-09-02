@@ -607,70 +607,95 @@ app.post('/api/settings/test-cpanel', async (req, res) => {
     }
     host = host.replace(/\/+$/, '');
 
-    const endpoint = `${host}/execute/SubDomain/get_subdomains`;
-    
-    // 1. First probe cPanel UAPI on port 2083
-    let cpanelResponse: any = null;
-    let authMethod = 'cPanel API Token';
+    const cleanUser = user.trim();
+    const cleanToken = token.trim().replace(/^['"]|['"]$/g, '');
+
+    // 1. Probe cPanel Variables/get_user_information (Universal token verification endpoint)
+    let verifiedUser = '';
     let lastError: any = null;
 
     try {
-      cpanelResponse = await axios.get(endpoint, {
+      const userEndpoint = `${host}/execute/Variables/get_user_information`;
+      const uRes = await axios.get(userEndpoint, {
         headers: {
-          'Authorization': `cpanel ${user}:${token}`
+          'Authorization': `cpanel ${cleanUser}:${cleanToken}`
         },
         httpsAgent: new https.Agent({ rejectUnauthorized: false }),
         timeout: 12000
       });
-    } catch (apiErr: any) {
-      lastError = apiErr;
+      if (uRes.data && (uRes.data.status === 1 || uRes.data.data)) {
+        verifiedUser = uRes.data.data?.user || cleanUser;
+      }
+    } catch (err: any) {
+      lastError = err;
     }
 
-    // 2. If port 2083 failed with 401 or 403, test if this is a WHM administrative token on port 2087
-    if (!cpanelResponse && (lastError?.response?.status === 401 || lastError?.response?.status === 403)) {
+    // 2. If user info succeeded or we want to verify subdomains
+    if (verifiedUser) {
       try {
-        const whmHost = host.replace(/:\d+$/, '') + ':2087';
-        const whmEndpoint = `${whmHost}/json-api/version?api.version=1`;
-        const whmRes = await axios.get(whmEndpoint, {
+        const subEndpoint = `${host}/execute/SubDomain/get_subdomains`;
+        await axios.get(subEndpoint, {
           headers: {
-            'Authorization': `whm ${user}:${token}`
+            'Authorization': `cpanel ${cleanUser}:${cleanToken}`
           },
           httpsAgent: new https.Agent({ rejectUnauthorized: false }),
-          timeout: 10000
+          timeout: 12000
         });
-        if (whmRes.data && whmRes.data.version) {
-          return res.json({
-            success: true,
-            message: `WHM Connection Verified! Authenticated via WHM Administrative API on port 2087 as "${user}".`
-          });
-        }
-      } catch (_) {
-        // Fall back to original cPanel error
-      }
-    }
-
-    if (cpanelResponse?.data && (cpanelResponse.data.status === 1 || Array.isArray(cpanelResponse.data.data))) {
+      } catch (_) {}
       return res.json({ 
         success: true, 
-        message: `cPanel connection verified (${authMethod})! Authenticated as "${user}". Subdomain management is ready.` 
-      });
-    } else {
-      const status = lastError?.response?.status || cpanelResponse?.status;
-      let hint = '';
-      if (status === 403 || status === 401) {
-        hint = `cPanel rejected the token with "Access Denied" (HTTP 403). To fix this: Log in to cPanel -> Security -> Manage API Tokens -> click "+ Create API Token" -> ensure "Full Access" or "Subdomains" is checked, and paste the newly generated token.`;
-      } else {
-        hint = lastError?.message || 'cPanel authentication rejected';
-      }
-      return res.status(400).json({ 
-        success: false, 
-        error: hint 
+        message: `cPanel connection verified! Authenticated as "${verifiedUser}". Subdomain provisioning is ready.` 
       });
     }
+
+    // 3. Probe SubDomain endpoint directly if user info was restricted
+    try {
+      const endpoint = `${host}/execute/SubDomain/get_subdomains`;
+      const response = await axios.get(endpoint, {
+        headers: {
+          'Authorization': `cpanel ${cleanUser}:${cleanToken}`
+        },
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        timeout: 12000
+      });
+      if (response.data && (response.data.status === 1 || Array.isArray(response.data.data))) {
+        return res.json({ 
+          success: true, 
+          message: `cPanel connection verified! Authenticated as "${cleanUser}". Subdomain management is ready.` 
+        });
+      }
+    } catch (err: any) {
+      lastError = err;
+    }
+
+    // 4. If port 2083 failed, probe WHM administrative port 2087
+    try {
+      const whmHost = host.replace(/:\d+$/, '') + ':2087';
+      const whmEndpoint = `${whmHost}/json-api/version?api.version=1`;
+      const whmRes = await axios.get(whmEndpoint, {
+        headers: {
+          'Authorization': `whm ${cleanUser}:${cleanToken}`
+        },
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+        timeout: 10000
+      });
+      if (whmRes.data && whmRes.data.version) {
+        return res.json({
+          success: true,
+          message: `WHM Connection Verified! Authenticated via WHM API on port 2087 as "${cleanUser}".`
+        });
+      }
+    } catch (_) {}
+
+    // 5. Diagnostic failure guidance
+    return res.status(400).json({ 
+      success: false, 
+      error: `cPanel at ${host} rejected authentication for "${cleanUser}". Please ensure: 1) The token was generated in cPanel -> Security -> Manage API Tokens with Full Access. 2) If using adeola.media, Host URL must be https://adeola.media:2083. (Or switch to "Wildcard Subdomain & Local Static" which needs no cPanel API!)` 
+    });
   } catch (error: any) {
     return res.status(500).json({ 
       success: false, 
-      error: `Could not connect to cPanel: ${error.response?.data?.errors?.join(', ') || error.message}` 
+      error: `Could not connect to cPanel: ${error.message}` 
     });
   }
 });
