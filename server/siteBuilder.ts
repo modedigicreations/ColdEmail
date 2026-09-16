@@ -325,6 +325,39 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
       console.error('[Website Builder] Gemini generation error:', err.message);
       return generateFallbackTemplate(lead, baseDomain);
     }
+  } else if (provider === 'openai') {
+    const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.warn('[Website Builder] OpenAI API key not provided. Using responsive fallback template.');
+      return generateFallbackTemplate(lead, baseDomain);
+    }
+
+    try {
+      const modelName = settings.openaiModel || 'gpt-4o-mini';
+      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: modelName,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: 4096,
+        temperature: 0.7
+      }, {
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+
+      if (response.data?.choices?.[0]?.message?.content) {
+        return sanitizeHtmlOutput(response.data.choices[0].message.content);
+      }
+      return generateFallbackTemplate(lead, baseDomain);
+    } catch (err: any) {
+      console.error('[Website Builder] OpenAI generation error:', err.response?.data?.error?.message || err.message);
+      return generateFallbackTemplate(lead, baseDomain);
+    }
   } else if (provider === 'deepseek') {
     const apiKey = settings.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {

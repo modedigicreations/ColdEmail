@@ -28,11 +28,13 @@ export interface Lead {
 }
 
 export interface Settings {
-  aiProvider: 'claude' | 'deepseek' | 'gemini';
+  aiProvider: 'claude' | 'deepseek' | 'gemini' | 'openai';
   anthropicApiKey: string;
   deepseekApiKey: string;
   geminiApiKey?: string;
   geminiModel?: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
   emailProvider: 'gmail' | 'resend';
   gmailEmail: string;
   gmailAppPassword: string;
@@ -60,11 +62,13 @@ interface DatabaseSchema {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  aiProvider: 'claude',
+  aiProvider: 'gemini',
   anthropicApiKey: '',
   deepseekApiKey: '',
   geminiApiKey: '',
   geminiModel: 'gemini-3.6-flash',
+  openaiApiKey: '',
+  openaiModel: 'gpt-4o-mini',
   emailProvider: 'gmail',
   gmailEmail: '',
   gmailAppPassword: '',

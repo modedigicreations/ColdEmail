@@ -614,19 +614,53 @@ app.post('/api/settings/test-ai', async (req, res) => {
           return res.status(500).json({ success: false, error: directErr.message || err.message });
         }
       }
+    } else if (provider === 'openai') {
+      const cleanKey = apiKey.trim();
+      const modelName = model || 'gpt-4o-mini';
+      try {
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+          model: modelName,
+          messages: [{ role: 'user', content: 'Return only "OK"' }],
+          max_tokens: 5
+        }, {
+          headers: {
+            'Authorization': `Bearer ${cleanKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        });
+
+        if (response.data?.choices?.[0]?.message?.content) {
+          return res.json({
+            success: true,
+            message: `ChatGPT / OpenAI connected successfully! (Model: ${modelName})`,
+            verifiedModel: modelName
+          });
+        }
+        return res.json({ success: true, message: 'ChatGPT / OpenAI API connection verified successfully!' });
+      } catch (err: any) {
+        const apiError = err.response?.data?.error;
+        if (apiError) {
+          return res.status(400).json({
+            success: false,
+            error: `OpenAI API Error (${apiError.type || apiError.code}): ${apiError.message}`
+          });
+        }
+        return res.status(500).json({ success: false, error: err.message });
+      }
     } else if (provider === 'deepseek') {
       await axios.post('https://api.deepseek.com/chat/completions', {
         model: 'deepseek-chat',
         messages: [{ role: 'user', content: 'Return only "OK"' }],
         max_tokens: 5
       }, {
-        headers: { 'Authorization': `Bearer ${apiKey}` },
+        headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
         timeout: 15000
       });
       return res.json({ success: true, message: 'DeepSeek API connection verified successfully!' });
     } else {
       // Claude
-      const anthropic = new Anthropic({ apiKey });
+      const anthropic = new Anthropic({ apiKey: apiKey.trim() });
       await anthropic.messages.create({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 5,

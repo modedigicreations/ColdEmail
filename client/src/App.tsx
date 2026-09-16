@@ -34,11 +34,13 @@ interface Lead {
 }
 
 interface Settings {
-  aiProvider: 'claude' | 'deepseek' | 'gemini';
+  aiProvider: 'claude' | 'deepseek' | 'gemini' | 'openai';
   anthropicApiKey: string;
   deepseekApiKey: string;
   geminiApiKey?: string;
   geminiModel?: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
   emailProvider: 'gmail' | 'resend';
   gmailEmail: string;
   gmailAppPassword: string;
@@ -65,11 +67,13 @@ export default function App() {
   // Leads & Data States
   const [leads, setLeads] = useState<Lead[]>([]);
   const [settings, setSettings] = useState<Settings>({
-    aiProvider: 'claude',
+    aiProvider: 'gemini',
     anthropicApiKey: '',
     deepseekApiKey: '',
     geminiApiKey: '',
-    geminiModel: 'gemini-1.5-flash',
+    geminiModel: 'gemini-3.6-flash',
+    openaiApiKey: '',
+    openaiModel: 'gpt-4o-mini',
     emailProvider: 'gmail',
     gmailEmail: '',
     gmailAppPassword: '',
@@ -278,22 +282,28 @@ export default function App() {
     setAiTestResult(null);
     try {
       const apiKey = settings.aiProvider === 'gemini' ? settings.geminiApiKey :
+                     settings.aiProvider === 'openai' ? settings.openaiApiKey :
                      settings.aiProvider === 'deepseek' ? settings.deepseekApiKey :
                      settings.anthropicApiKey;
+      const model = settings.aiProvider === 'openai' ? settings.openaiModel : settings.geminiModel;
       const res = await fetch(`${API_BASE}/settings/test-ai`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: settings.aiProvider,
           apiKey,
-          model: settings.geminiModel
+          model
         })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setAiTestResult({ success: true, message: data.message });
         if (data.verifiedModel) {
-          setSettings(prev => ({ ...prev, geminiModel: data.verifiedModel }));
+          if (settings.aiProvider === 'openai') {
+            setSettings(prev => ({ ...prev, openaiModel: data.verifiedModel }));
+          } else if (settings.aiProvider === 'gemini') {
+            setSettings(prev => ({ ...prev, geminiModel: data.verifiedModel }));
+          }
         }
       } else {
         setAiTestResult({ success: false, message: data.error || 'Connection test failed.' });
@@ -850,6 +860,15 @@ export default function App() {
                     <input 
                       type="radio" 
                       name="aiProvider"
+                      checked={settings.aiProvider === 'openai'}
+                      onChange={() => setSettings({ ...settings, aiProvider: 'openai' })}
+                    />
+                    ChatGPT (OpenAI GPT-4o / Mini)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px' }}>
+                    <input 
+                      type="radio" 
+                      name="aiProvider"
                       checked={settings.aiProvider === 'claude'}
                       onChange={() => setSettings({ ...settings, aiProvider: 'claude' })}
                     />
@@ -911,6 +930,57 @@ export default function App() {
                       <option value="gemini-3.6-flash">Gemini 3.6 Flash (Recommended / Latest)</option>
                       <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                       <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {settings.aiProvider === 'openai' && (
+                <div>
+                  <div className="form-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label>ChatGPT / OpenAI API Key</label>
+                      <a 
+                        href="https://platform.openai.com/api-keys" 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        style={{ fontSize: '12px', color: 'var(--info)', textDecoration: 'none' }}
+                      >
+                        Get API key at OpenAI Platform &rarr;
+                      </a>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input 
+                        type="password" 
+                        className="form-control" 
+                        value={settings.openaiApiKey || ''}
+                        onChange={e => setSettings({ ...settings, openaiApiKey: e.target.value })}
+                        placeholder="sk-..."
+                        style={{ flex: 1 }}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary"
+                        onClick={handleTestAi}
+                        disabled={testingAi || !settings.openaiApiKey}
+                        style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                      >
+                        {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ maxWidth: '340px' }}>
+                    <label>ChatGPT Model</label>
+                    <select 
+                      className="form-control"
+                      value={settings.openaiModel || 'gpt-4o-mini'}
+                      onChange={e => setSettings({ ...settings, openaiModel: e.target.value })}
+                    >
+                      <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cost-Effective - Recommended)</option>
+                      <option value="gpt-4o">GPT-4o (Flagship Omnimodal / Elite Copy)</option>
+                      <option value="chatgpt-4o-latest">ChatGPT-4o Latest</option>
+                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Legacy Fast)</option>
                     </select>
                   </div>
                 </div>
@@ -1134,7 +1204,7 @@ export default function App() {
                   rows={3}
                   value={settings.websitePromptTemplate}
                   onChange={e => setSettings({ ...settings, websitePromptTemplate: e.target.value })}
-                  placeholder="Instructions for Claude / DeepSeek on designing the demo websites..."
+                  placeholder="Instructions for ChatGPT / Gemini / Claude / DeepSeek on designing the demo websites..."
                 />
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
                   The AI builds a modern, single-page responsive website addressing each lead's specific SEO and design weaknesses.

@@ -90,6 +90,38 @@ Conclude the email using the provided contact details and email signature. Do no
       console.error('Gemini email generation failed:', error.message);
       throw new Error(`Gemini API Error: ${error.message}`);
     }
+  } else if (provider === 'openai') {
+    const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('ChatGPT / OpenAI API key is not configured. Please set it in Settings.');
+    }
+
+    try {
+      const modelName = settings.openaiModel || 'gpt-4o-mini';
+      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: modelName,
+        messages: [
+          { role: 'system', content: settings.systemPrompt },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 1500,
+        temperature: 0.7
+      }, {
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 45000
+      });
+
+      if (response.data?.choices?.[0]?.message?.content) {
+        return response.data.choices[0].message.content.trim();
+      }
+      throw new Error('Unexpected response format from OpenAI API');
+    } catch (error: any) {
+      console.error('OpenAI email generation failed:', error.message);
+      throw new Error(`OpenAI API Error: ${error.response?.data?.error?.message || error.message}`);
+    }
   } else if (provider === 'deepseek') {
     const apiKey = settings.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
