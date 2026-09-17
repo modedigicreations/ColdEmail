@@ -3,7 +3,8 @@ import {
   UploadCloud, Send, Settings as SettingsIcon, Users, Sparkles, Mail, 
   CheckCircle, Loader2, Globe, Trash2, Cpu, Edit,
   Play, RefreshCw, XCircle, Search, AlertCircle,
-  Monitor, Smartphone, ExternalLink, LayoutTemplate, Server
+  Monitor, Smartphone, ExternalLink, LayoutTemplate, Server,
+  Save, Download
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (
@@ -65,7 +66,14 @@ export default function App() {
   const [activeSubTab, setActiveSubTab] = useState<'import' | 'scrape'>('import');
 
   // Leads & Data States
-  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leads, setLeads] = useState<Lead[]>(() => {
+    try {
+      const cached = localStorage.getItem('coldreach_leads');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [settings, setSettings] = useState<Settings>({
     aiProvider: 'gemini',
     anthropicApiKey: '',
@@ -104,12 +112,30 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Scraping Parameters
-  const [scrapeParams, setScrapeParams] = useState({
-    keyword: 'Dental Clinics',
-    location: 'Lagos, Nigeria',
-    email: '',
-    pass: ''
+  const [scrapeParams, setScrapeParams] = useState(() => {
+    try {
+      const cached = localStorage.getItem('coldreach_scrape_params');
+      return cached ? JSON.parse(cached) : {
+        keyword: 'Dental Clinics',
+        location: 'Lagos, Nigeria',
+        email: '',
+        pass: ''
+      };
+    } catch {
+      return {
+        keyword: 'Dental Clinics',
+        location: 'Lagos, Nigeria',
+        email: '',
+        pass: ''
+      };
+    }
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('coldreach_scrape_params', JSON.stringify(scrapeParams));
+    } catch {}
+  }, [scrapeParams]);
 
   // Action Loading States
   const [isLoading, setIsLoading] = useState(false);
@@ -153,9 +179,9 @@ export default function App() {
   // Save leads to localStorage whenever they change
   useEffect(() => {
     if (leads && leads.length > 0) {
-      localStorage.setItem('coldreach_leads', JSON.stringify(leads));
-    } else if (leads && leads.length === 0) {
-      localStorage.removeItem('coldreach_leads');
+      try {
+        localStorage.setItem('coldreach_leads', JSON.stringify(leads));
+      } catch {}
     }
   }, [leads]);
 
@@ -585,11 +611,57 @@ export default function App() {
     }
   };
 
+  const handleSaveLeadsManually = async () => {
+    if (leads.length === 0) return;
+    try {
+      localStorage.setItem('coldreach_leads', JSON.stringify(leads));
+      await fetch(`${API_BASE}/leads/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(leads)
+      });
+      showMsg(`Successfully saved ${leads.length} leads to storage & synced with backend!`, 'success');
+    } catch {
+      showMsg(`Saved ${leads.length} leads to browser storage!`, 'success');
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (leads.length === 0) return;
+    const headers = ['Business Name', 'Category', 'Website', 'Email', 'Phone', 'SEO Score', 'GMB Rating', 'Subdomain', 'Demo Site URL', 'Site Status', 'Outreach Status'];
+    const rows = leads.map(l => [
+      `"${(l.name || '').replace(/"/g, '""')}"`,
+      `"${(l.category || '').replace(/"/g, '""')}"`,
+      `"${(l.website || '').replace(/"/g, '""')}"`,
+      `"${(l.email || '').replace(/"/g, '""')}"`,
+      `"${(l.phone || '').replace(/"/g, '""')}"`,
+      `"${l.seoScore || ''}"`,
+      `"${l.gmbRating || ''}"`,
+      `"${(l.subdomain || '').replace(/"/g, '""')}"`,
+      `"${(l.demoSiteUrl || '').replace(/"/g, '""')}"`,
+      `"${(l.siteStatus || '').replace(/"/g, '""')}"`,
+      `"${(l.status || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `coldreach-leads-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const clearAllLeads = async () => {
     if (!confirm('This will delete all leads in the database. Continue?')) return;
     try {
       const res = await fetch(`${API_BASE}/leads`, { method: 'DELETE' });
       if (res.ok) {
+        localStorage.removeItem('coldreach_leads');
+        setLeads([]);
         showMsg('All leads cleared');
         setSelectedLeadId(null);
         fetchLeads();
@@ -1503,6 +1575,23 @@ export default function App() {
                         style={{ borderColor: 'var(--success)', color: 'var(--success)' }}
                       >
                         <Send size={14} /> Bulk Send Drafts
+                      </button>
+                      <button 
+                        className="btn btn-secondary" 
+                        onClick={handleSaveLeadsManually}
+                        disabled={leads.length === 0}
+                        style={{ borderColor: 'var(--success)', color: 'var(--success)' }}
+                        title="Save leads to browser storage and sync with backend"
+                      >
+                        <Save size={14} /> Save Leads
+                      </button>
+                      <button 
+                        className="btn btn-secondary" 
+                        onClick={handleExportCSV}
+                        disabled={leads.length === 0}
+                        title="Download leads as CSV"
+                      >
+                        <Download size={14} /> Export CSV
                       </button>
                     </>
                   )}
