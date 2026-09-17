@@ -12,28 +12,59 @@ const __dirname = path.dirname(__filename);
 // Insecure HTTPS agent allows crawling websites that have expired or self-signed SSL certificates (common for local leads needing fixes)
 const insecureHttpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Crawl a lead's website to extract context
-export async function crawlWebsite(url: string): Promise<string> {
-  if (!url) return '';
-  let targetUrl = url;
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    targetUrl = 'https://' + url;
+// Crawl a lead's website to extract context and missing contact info
+export async function crawlWebsite(url: string): Promise<{ text: string; email?: string; phone?: string }> {
+  if (!url) return { text: '' };
+  let targetUrl = url.trim();
+  if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+    targetUrl = 'https://' + targetUrl;
   }
 
   try {
     const response = await axios.get(targetUrl, {
-      timeout: 8000,
+      timeout: 10000,
+      maxContentLength: 5 * 1024 * 1024,
+      maxBodyLength: 5 * 1024 * 1024,
+      maxRedirects: 5,
       httpsAgent: insecureHttpsAgent,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
     });
 
     const $ = cheerio.load(response.data);
     
-    // Remove scripts, styles, and navigation
-    $('script, style, nav, footer, header, noscript').remove();
+    // Extract contact emails if available on page
+    let foundEmail = '';
+    $('a[href^="mailto:"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const email = href.replace('mailto:', '').split('?')[0].trim();
+      if (email && email.includes('@') && !foundEmail && !email.includes('.png') && !email.includes('.jpg')) {
+        foundEmail = email;
+      }
+    });
+
+    if (!foundEmail) {
+      const pageText = $('body').text();
+      const emailMatch = pageText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch && !emailMatch[0].endsWith('.png') && !emailMatch[0].endsWith('.jpg')) {
+        foundEmail = emailMatch[0];
+      }
+    }
+
+    // Extract phone numbers if available on page
+    let foundPhone = '';
+    $('a[href^="tel:"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const phone = href.replace('tel:', '').trim();
+      if (phone && !foundPhone) {
+        foundPhone = phone;
+      }
+    });
+
+    // Remove scripts, styles, and navigation to get clean body text
+    $('script, style, nav, footer, header, noscript, svg, iframe').remove();
     
     const title = $('title').text().trim();
     const metaDescription = $('meta[name="description"]').attr('content') || '';
@@ -41,7 +72,7 @@ export async function crawlWebsite(url: string): Promise<string> {
     // Extract main text
     const paragraphs: string[] = [];
     $('h1, h2, h3, p').each((_, el) => {
-      const text = $(el).text().trim();
+      const text = $(el).text().trim().replace(/\s+/g, ' ');
       if (text.length > 20 && paragraphs.length < 15) {
         paragraphs.push(text);
       }
@@ -50,14 +81,19 @@ export async function crawlWebsite(url: string): Promise<string> {
     const content = [
       title ? `Title: ${title}` : '',
       metaDescription ? `Description: ${metaDescription}` : '',
+      foundEmail ? `Contact Email: ${foundEmail}` : '',
+      foundPhone ? `Phone: ${foundPhone}` : '',
       paragraphs.join('\n')
     ].filter(Boolean).join('\n\n');
 
-    // Return truncated content
-    return content.substring(0, 1500);
+    return {
+      text: content.substring(0, 1800),
+      email: foundEmail || undefined,
+      phone: foundPhone || undefined
+    };
   } catch (error: any) {
     console.error(`Failed to crawl ${targetUrl}:`, error.message);
-    return `Failed to crawl website: ${error.message}`;
+    return { text: `Failed to crawl website: ${error.message}` };
   }
 }
 
@@ -262,7 +298,9 @@ export async function scrapeLeadsGorilla(
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-first-run',
-      '--no-zygote'
+      '--no-zygote',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--blink-settings=imagesEnabled=false'
     ]
   });
   let page: any = null;
@@ -484,9 +522,7 @@ export async function scrapeLeadsGorilla(
       logDebug(`Failed to save success debug info: ${debugError.message}`);
     }
 
-    await browser.close();
     return leads;
-
   } catch (error: any) {
     logDebug(`Puppeteer scraping failed with error: ${error.message}`);
     if (page) {
@@ -502,7 +538,14 @@ export async function scrapeLeadsGorilla(
         logDebug(`Failed to save debug info: ${debugError.message}`);
       }
     }
-    await browser.close();
     throw error;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeErr: any) {
+        logDebug(`Error closing Puppeteer browser: ${closeErr.message}`);
+      }
+    }
   }
 }

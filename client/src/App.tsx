@@ -71,7 +71,7 @@ export default function App() {
     anthropicApiKey: '',
     deepseekApiKey: '',
     geminiApiKey: '',
-    geminiModel: 'gemini-3.6-flash',
+    geminiModel: 'gemini-3.8-flash',
     openaiApiKey: '',
     openaiModel: 'gpt-4o-mini',
     emailProvider: 'gmail',
@@ -622,19 +622,34 @@ export default function App() {
       });
 
       try {
+        let currentLeadState = lead;
         if (lead.website) {
           setLoadingLeadId(lead.id);
-          await fetch(`${API_BASE}/leads/${lead.id}/crawl`, { method: 'POST' });
+          const crawlRes = await fetch(`${API_BASE}/leads/${lead.id}/crawl`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lead: currentLeadState, settings })
+          });
+          if (crawlRes.ok) {
+            const updatedLead = await crawlRes.json();
+            currentLeadState = updatedLead;
+            setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+          }
         }
         
         if (!isAutomatingRef.current) break;
 
         // Draft AI Email
         setLoadingLeadId(lead.id);
-        await fetch(`${API_BASE}/leads/${lead.id}/draft`, { method: 'POST' });
-
-        const updateRes = await fetch(`${API_BASE}/leads`);
-        setLeads(await updateRes.json());
+        const draftRes = await fetch(`${API_BASE}/leads/${lead.id}/draft`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead: currentLeadState, settings })
+        });
+        if (draftRes.ok) {
+          const updatedLead = await draftRes.json();
+          setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+        }
       } catch (err: any) {
         console.error(`Error processing lead ${lead.name}:`, err.message);
       }
@@ -673,9 +688,15 @@ export default function App() {
 
       setIsBuildingSiteId(lead.id);
       try {
-        await fetch(`${API_BASE}/leads/${lead.id}/build-and-deploy`, { method: 'POST' });
-        const updateRes = await fetch(`${API_BASE}/leads`);
-        setLeads(await updateRes.json());
+        const buildRes = await fetch(`${API_BASE}/leads/${lead.id}/build-and-deploy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead, settings })
+        });
+        if (buildRes.ok) {
+          const updated = await buildRes.json();
+          setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
+        }
       } catch (err: any) {
         console.error(`Error building site for ${lead.name}:`, err.message);
       }
@@ -733,15 +754,17 @@ export default function App() {
         const res = await fetch(`${API_BASE}/leads/${lead.id}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subject: resolvedSubject })
+          body: JSON.stringify({ subject: resolvedSubject, lead, settings })
         });
         if (!res.ok) {
           const err = await res.json();
           throw new Error(err.error || 'Send failed');
         }
 
-        const updateRes = await fetch(`${API_BASE}/leads`);
-        setLeads(await updateRes.json());
+        const resData = await res.json();
+        if (resData.lead) {
+          setLeads(prev => prev.map(l => l.id === resData.lead.id ? resData.lead : l));
+        }
       } catch (err: any) {
         console.error(`Error sending email to ${lead.name}:`, err.message);
       }
@@ -924,10 +947,12 @@ export default function App() {
                     <label>Gemini Model</label>
                     <select 
                       className="form-control"
-                      value={settings.geminiModel || 'gemini-3.6-flash'}
+                      value={settings.geminiModel || 'gemini-3.8-flash'}
                       onChange={e => setSettings({ ...settings, geminiModel: e.target.value })}
                     >
-                      <option value="gemini-3.6-flash">Gemini 3.6 Flash (Recommended / Latest)</option>
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recommended / Latest)</option>
+                      <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                       <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                       <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning)</option>
                     </select>

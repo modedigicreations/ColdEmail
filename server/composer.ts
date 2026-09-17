@@ -48,44 +48,40 @@ Conclude the email using the provided contact details and email signature. Do no
     try {
       const cleanKey = apiKey.trim();
       const genAI = new GoogleGenerativeAI(cleanKey);
-      let modelName = settings.geminiModel || 'gemini-3.6-flash';
-      if (modelName === 'gemini-2.0-flash' || modelName === 'gemini-2.5-flash') {
-        modelName = 'gemini-3.6-flash';
+      const requestedModel = settings.geminiModel || 'gemini-3.8-flash';
+      const candidateModels = Array.from(new Set([
+        requestedModel,
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash'
+      ]));
+
+      let lastError: any = null;
+      for (const mName of candidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({
+            model: mName,
+            systemInstruction: settings.systemPrompt
+          });
+          const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+              maxOutputTokens: 1500,
+              temperature: 0.7
+            }
+          });
+          const text = result?.response?.text();
+          if (text) {
+            return text.trim();
+          }
+        } catch (mErr: any) {
+          lastError = mErr;
+          console.warn(`[Composer] Gemini model ${mName} attempt failed: ${mErr.message}. Trying next candidate...`);
+        }
       }
 
-      let result: any;
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          systemInstruction: settings.systemPrompt
-        });
-        result = await model.generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 1500,
-            temperature: 0.7
-          }
-        });
-      } catch (firstErr: any) {
-        console.warn(`[Composer] Gemini model ${modelName} failed (${firstErr.message}), trying gemini-3.6-flash...`);
-        const fallbackModel = genAI.getGenerativeModel({
-          model: 'gemini-3.6-flash',
-          systemInstruction: settings.systemPrompt
-        });
-        result = await fallbackModel.generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 1500,
-            temperature: 0.7
-          }
-        });
-      }
-
-      const text = result?.response?.text();
-      if (text) {
-        return text.trim();
-      }
-      throw new Error('Unexpected empty response from Google Gemini API');
+      throw lastError || new Error('Unexpected empty response from Google Gemini API');
     } catch (error: any) {
       console.error('Gemini email generation failed:', error.message);
       throw new Error(`Gemini API Error: ${error.message}`);

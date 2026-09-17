@@ -30,6 +30,37 @@ app.use(express.json());
 app.use('/debug', express.static(path.join(__dirname, 'debug')));
 app.use('/sites', express.static(getSitesDir()));
 
+// Virtual Host middleware for custom subdomains (e.g. lead-subdomain.demo.domain.com or lead-subdomain.localhost)
+app.use((req, res, next) => {
+  // Pass API requests, static sites, and debug requests to normal routes
+  if (req.path.startsWith('/api') || req.path.startsWith('/debug') || req.path.startsWith('/sites') || req.path.startsWith('/demo')) {
+    return next();
+  }
+
+  const rawHost = (req.headers.host || '').split(':')[0].toLowerCase();
+  const settings = db.getSettings();
+  const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com').replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
+
+  let targetSubdomain = '';
+  if (rawHost.endsWith(`.${baseDomain}`)) {
+    targetSubdomain = rawHost.replace(`.${baseDomain}`, '').trim();
+  } else if (rawHost.endsWith('.localhost')) {
+    targetSubdomain = rawHost.replace('.localhost', '').trim();
+  }
+
+  if (targetSubdomain && targetSubdomain !== 'www' && targetSubdomain !== 'api') {
+    const leads = db.getLeads();
+    const lead = leads.find(l => l.subdomain === targetSubdomain || l.id === targetSubdomain);
+    if (lead && lead.demoSiteHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.removeHeader('X-Frame-Options');
+      return res.send(lead.demoSiteHtml);
+    }
+  }
+
+  next();
+});
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Get all leads
@@ -154,8 +185,16 @@ app.post('/api/leads/automate-all', (req, res) => {
             db.updateLead(lead.id, { status: 'sending', error: undefined });
             try {
               console.log(`[Automation] Crawling website for lead: ${lead.name}`);
-              crawledText = await crawlWebsite(lead.website);
-              db.updateLead(lead.id, { crawledText, status: 'crawled' });
+              const crawlRes = await crawlWebsite(lead.website);
+              crawledText = typeof crawlRes === 'string' ? crawlRes : crawlRes.text;
+              const emailUpdate = (!lead.email && typeof crawlRes !== 'string' && crawlRes.email) ? crawlRes.email : undefined;
+              const phoneUpdate = (!lead.phone && typeof crawlRes !== 'string' && crawlRes.phone) ? crawlRes.phone : undefined;
+              db.updateLead(lead.id, { 
+                crawledText, 
+                status: 'crawled',
+                ...(emailUpdate ? { email: emailUpdate } : {}),
+                ...(phoneUpdate ? { phone: phoneUpdate } : {})
+              });
             } catch (crawlErr: any) {
               console.error(`[Automation] Crawl failed for lead ${lead.name}:`, crawlErr.message);
               db.updateLead(lead.id, { 
@@ -271,10 +310,16 @@ app.post('/api/leads/:id/crawl', async (req, res) => {
 
     db.updateLead(lead.id, { status: 'sending', error: undefined });
 
-    const crawledText = await crawlWebsite(lead.website);
+    const crawlRes = await crawlWebsite(lead.website);
+    const crawledText = typeof crawlRes === 'string' ? crawlRes : crawlRes.text;
+    const emailUpdate = (!lead.email && typeof crawlRes !== 'string' && crawlRes.email) ? crawlRes.email : undefined;
+    const phoneUpdate = (!lead.phone && typeof crawlRes !== 'string' && crawlRes.phone) ? crawlRes.phone : undefined;
+
     const updated = db.updateLead(lead.id, {
       crawledText,
-      status: 'crawled'
+      status: 'crawled',
+      ...(emailUpdate ? { email: emailUpdate } : {}),
+      ...(phoneUpdate ? { phone: phoneUpdate } : {})
     });
 
     res.json(updated);
@@ -337,9 +382,18 @@ app.post('/api/leads/:id/send', async (req, res) => {
 
     db.updateLead(lead.id, { status: 'sending', error: undefined });
 
+    const rawSubject = subject || `Website Redesign Demo for ${lead.name}`;
+    const resolvedSubject = rawSubject
+      .replace(/\{\{\s*Business Name\s*\}\}/gi, lead.name)
+      .replace(/\{\{\s*Category\s*\}\}/gi, lead.category || 'your business')
+      .replace(/\{\{\s*SEO Score\s*\}\}/gi, lead.seoScore ? `${lead.seoScore}/100` : 'N/A')
+      .replace(/\{\{\s*GMB Rating\s*\}\}/gi, lead.gmbRating ? `${lead.gmbRating}/5` : 'N/A')
+      .replace(/\{\{\s*Demo Website\s*\}\}/gi, lead.demoSiteUrl || '')
+      .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, lead.demoSiteUrl || '');
+
     await sendColdEmail({
       to: lead.email,
-      subject: subject || `Website Redesign Demo for ${lead.name}`,
+      subject: resolvedSubject,
       body: emailBody
     }, settings);
 
@@ -566,12 +620,16 @@ app.post('/api/settings/test-ai', async (req, res) => {
           });
         }
 
-        // Auto-select model prioritizing gemini-3.6-flash (current generation)
+        // Auto-select model prioritizing gemini-3.8-flash, then gemini-3.6-flash
         let chosen = '';
         if (model && contentModels.includes(model)) {
           chosen = model;
+        } else if (contentModels.includes('gemini-3.8-flash')) {
+          chosen = 'gemini-3.8-flash';
         } else if (contentModels.includes('gemini-3.6-flash')) {
           chosen = 'gemini-3.6-flash';
+        } else if (contentModels.find(m => m.includes('3.8-flash'))) {
+          chosen = contentModels.find(m => m.includes('3.8-flash'))!;
         } else if (contentModels.find(m => m.includes('3.6-flash'))) {
           chosen = contentModels.find(m => m.includes('3.6-flash'))!;
         } else if (contentModels.find(m => m.includes('flash'))) {
@@ -584,8 +642,7 @@ app.post('/api/settings/test-ai', async (req, res) => {
 
         const genAI = new GoogleGenerativeAI(cleanKey);
         const geminiModel = genAI.getGenerativeModel({ model: chosen });
-        const result = await geminiModel.generateContent('Return only "OK".');
-        const responseText = result.response.text().trim();
+        await geminiModel.generateContent('Return only "OK".');
 
         return res.json({ 
           success: true, 
@@ -593,26 +650,32 @@ app.post('/api/settings/test-ai', async (req, res) => {
           verifiedModel: chosen
         });
       } catch (err: any) {
-        // Direct fallback attempt with gemini-3.6-flash
-        try {
-          const genAI = new GoogleGenerativeAI(cleanKey);
-          const geminiModel = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
-          const result = await geminiModel.generateContent('Return only "OK".');
-          return res.json({
-            success: true,
-            message: 'Google Gemini connected successfully! (Model: gemini-3.6-flash)',
-            verifiedModel: 'gemini-3.6-flash'
-          });
-        } catch (directErr: any) {
-          const apiError = err.response?.data?.error || directErr.response?.data?.error;
-          if (apiError) {
-            return res.status(400).json({
-              success: false,
-              error: `Google API Error (${apiError.status || apiError.code}): ${apiError.message}`
+        // Direct candidate fallback attempt
+        const fallbackCandidates = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+        let lastErr: any = null;
+        for (const fb of fallbackCandidates) {
+          try {
+            const genAI = new GoogleGenerativeAI(cleanKey);
+            const geminiModel = genAI.getGenerativeModel({ model: fb });
+            await geminiModel.generateContent('Return only "OK".');
+            return res.json({
+              success: true,
+              message: `Google Gemini connected successfully! (Model: ${fb})`,
+              verifiedModel: fb
             });
+          } catch (directErr: any) {
+            lastErr = directErr;
           }
-          return res.status(500).json({ success: false, error: directErr.message || err.message });
         }
+
+        const apiError = err.response?.data?.error || lastErr?.response?.data?.error;
+        if (apiError) {
+          return res.status(400).json({
+            success: false,
+            error: `Google API Error (${apiError.status || apiError.code}): ${apiError.message}`
+          });
+        }
+        return res.status(500).json({ success: false, error: lastErr?.message || err.message });
       }
     } else if (provider === 'openai') {
       const cleanKey = apiKey.trim();
@@ -814,4 +877,12 @@ app.post('/api/settings', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception thrown:', err);
 });

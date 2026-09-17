@@ -66,7 +66,7 @@ const DEFAULT_SETTINGS: Settings = {
   anthropicApiKey: '',
   deepseekApiKey: '',
   geminiApiKey: '',
-  geminiModel: 'gemini-3.6-flash',
+  geminiModel: 'gemini-3.8-flash',
   openaiApiKey: '',
   openaiModel: 'gpt-4o-mini',
   emailProvider: 'gmail',
@@ -113,21 +113,38 @@ class Database {
     try {
       if (fs.existsSync(DB_FILE)) {
         const fileContent = fs.readFileSync(DB_FILE, 'utf-8');
-        this.data = JSON.parse(fileContent);
+        const parsed = JSON.parse(fileContent);
+        this.data = {
+          leads: Array.isArray(parsed.leads) ? parsed.leads : [],
+          settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) }
+        };
       } else {
         this.save();
       }
     } catch (e) {
-      console.error('Failed to load database, resetting to default', e);
+      console.error('Failed to load database, creating backup and resetting to default', e);
+      try {
+        if (fs.existsSync(DB_FILE)) {
+          fs.copyFileSync(DB_FILE, `${DB_FILE}.corrupt.${Date.now()}`);
+        }
+      } catch {}
       this.data = { leads: [], settings: DEFAULT_SETTINGS };
+      this.save();
     }
   }
 
   private save() {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+      const tempFile = `${DB_FILE}.tmp.${Date.now()}`;
+      fs.writeFileSync(tempFile, JSON.stringify(this.data, null, 2), 'utf-8');
+      fs.renameSync(tempFile, DB_FILE);
     } catch (e) {
-      console.error('Failed to save database', e);
+      console.error('Failed to save database atomically, attempting direct save', e);
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf-8');
+      } catch (directErr) {
+        console.error('Direct fallback save also failed', directErr);
+      }
     }
   }
 
@@ -196,6 +213,7 @@ class Database {
 
   saveSettings(settings: Partial<Settings>): Settings {
     this.data.settings = {
+      ...DEFAULT_SETTINGS,
       ...this.data.settings,
       ...settings
     };

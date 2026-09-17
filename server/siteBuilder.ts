@@ -6,14 +6,7 @@ import { Lead, Settings } from './db.js';
 export function sanitizeHtmlOutput(raw: string): string {
   let cleaned = raw.trim();
 
-  // 1. Try to extract complete HTML document if embedded in text
-  const docMatch = cleaned.match(/(<!DOCTYPE\s+html[\s\S]*?<\/html>)/i) ||
-                   cleaned.match(/(<html[\s\S]*?<\/html>)/i);
-  if (docMatch) {
-    return docMatch[1].trim();
-  }
-
-  // 2. Try to extract inside markdown code blocks
+  // 1. Try to extract inside markdown code blocks first
   const codeBlockMatch = cleaned.match(/```(?:html)?\s*([\s\S]*?)\s*```/i);
   if (codeBlockMatch) {
     cleaned = codeBlockMatch[1].trim();
@@ -23,6 +16,13 @@ export function sanitizeHtmlOutput(raw: string): string {
   }
 
   cleaned = cleaned.trim();
+
+  // 2. Try to extract complete HTML document
+  const docMatch = cleaned.match(/(<!DOCTYPE\s+html[\s\S]*?<\/html>)/i) ||
+                   cleaned.match(/(<html[\s\S]*?<\/html>)/i);
+  if (docMatch) {
+    return docMatch[1].trim();
+  }
 
   // 3. Fallback: Wrap in valid HTML5 structure if fragment
   if (!cleaned.toLowerCase().includes('<!doctype html') && !cleaned.toLowerCase().includes('<html')) {
@@ -38,6 +38,10 @@ export function sanitizeHtmlOutput(raw: string): string {
   ${cleaned}
 </body>
 </html>`;
+  } else {
+    // Ensure closing tags if output was slightly truncated
+    if (!cleaned.toLowerCase().includes('</body>')) cleaned += '\n</body>';
+    if (!cleaned.toLowerCase().includes('</html>')) cleaned += '\n</html>';
   }
 
   return cleaned;
@@ -283,43 +287,37 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     try {
       const cleanKey = apiKey.trim();
       const genAI = new GoogleGenerativeAI(cleanKey);
-      let modelName = settings.geminiModel || 'gemini-3.6-flash';
-      if (modelName === 'gemini-2.0-flash' || modelName === 'gemini-2.5-flash') {
-        modelName = 'gemini-3.6-flash';
+      const requestedModel = settings.geminiModel || 'gemini-3.8-flash';
+      const candidateModels = Array.from(new Set([
+        requestedModel,
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash'
+      ]));
+
+      for (const mName of candidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({
+            model: mName,
+            systemInstruction: systemPrompt
+          });
+          const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            generationConfig: {
+              maxOutputTokens: 4096,
+              temperature: 0.7
+            }
+          });
+          const text = result?.response?.text();
+          if (text) {
+            return sanitizeHtmlOutput(text);
+          }
+        } catch (mErr: any) {
+          console.warn(`[Website Builder] Model ${mName} attempt failed: ${mErr.message}. Trying next candidate...`);
+        }
       }
 
-      let result: any;
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          systemInstruction: systemPrompt
-        });
-        result = await model.generateContent({
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          generationConfig: {
-            maxOutputTokens: 4096,
-            temperature: 0.7
-          }
-        });
-      } catch (firstErr: any) {
-        console.warn(`[Website Builder] Model ${modelName} failed (${firstErr.message}), trying gemini-3.6-flash...`);
-        const fallbackModel = genAI.getGenerativeModel({
-          model: 'gemini-3.6-flash',
-          systemInstruction: systemPrompt
-        });
-        result = await fallbackModel.generateContent({
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          generationConfig: {
-            maxOutputTokens: 4096,
-            temperature: 0.7
-          }
-        });
-      }
-
-      const text = result?.response?.text();
-      if (text) {
-        return sanitizeHtmlOutput(text);
-      }
       return generateFallbackTemplate(lead, baseDomain);
     } catch (err: any) {
       console.error('[Website Builder] Gemini generation error:', err.message);
