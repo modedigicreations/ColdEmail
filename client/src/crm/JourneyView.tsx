@@ -27,13 +27,14 @@ export const JourneyView: React.FC<JourneyViewProps> = ({
   onUpdateRecord,
   onCreateRecord
 }) => {
-  const clients = records.filter(r => r.type === 'client');
+  const safeRecords: CRMRecord[] = Array.isArray(records) ? records : ((records as any)?.records || []);
+  const clients = safeRecords.filter(r => r.type === 'client');
   const [selectedClientId, setSelectedClientId] = useState<string>(clients[0]?.id || 'none');
   const [activeStage, setActiveStage] = useState<string>('proposal');
 
   const selectedClient = clients.find(c => c.id === selectedClientId) || clients[0];
   const clientRecords = selectedClient 
-    ? records.filter(r => r.clientId === selectedClient.id)
+    ? safeRecords.filter(r => r.clientId === selectedClient.id)
     : [];
 
   const clientProposals = clientRecords.filter(r => r.type === 'proposal');

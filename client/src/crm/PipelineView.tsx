@@ -36,8 +36,9 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const clients = records.filter(r => r.type === 'client');
-  const deals = records.filter(r => r.type === 'lead');
+  const safeRecords: CRMRecord[] = Array.isArray(records) ? records : ((records as any)?.records || []);
+  const clients = safeRecords.filter(r => r.type === 'client');
+  const deals = safeRecords.filter(r => r.type === 'lead');
 
   const totalPipelineValue = deals
     .filter(d => d.status !== 'lost')

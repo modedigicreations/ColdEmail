@@ -290,12 +290,13 @@ export default function App() {
         fetch(`${API_BASE}/crm/summary`)
       ]);
       if (recRes.ok) {
-        const records = await recRes.json();
-        setCrmRecords(records);
+        const data = await recRes.json();
+        const recordsList = Array.isArray(data) ? data : (data.records || []);
+        setCrmRecords(recordsList);
       }
       if (servRes.ok) {
         const services = await servRes.json();
-        setCrmServices(services);
+        setCrmServices(Array.isArray(services) ? services : (services.services || []));
       }
       if (sumRes.ok) {
         const summary = await sumRes.json();
@@ -315,7 +316,8 @@ export default function App() {
       });
       if (res.ok) {
         const created = await res.json();
-        setCrmRecords(prev => [created, ...prev]);
+        const record = created.record || created;
+        setCrmRecords(prev => [record, ...(Array.isArray(prev) ? prev : [])]);
         showMsg(`Created ${data.type || 'record'} successfully!`);
         fetchCRMData();
       } else {
@@ -335,7 +337,8 @@ export default function App() {
       });
       if (res.ok) {
         const updated = await res.json();
-        setCrmRecords(prev => prev.map(r => r.id === id ? updated : r));
+        const record = updated.record || updated;
+        setCrmRecords(prev => (Array.isArray(prev) ? prev : []).map(r => r.id === id ? record : r));
         fetchCRMData();
       } else {
         showMsg('Failed to update CRM record', 'error');
@@ -349,7 +352,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/crm/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        setCrmRecords(prev => prev.filter(r => r.id !== id));
+        setCrmRecords(prev => (Array.isArray(prev) ? prev : []).filter(r => r.id !== id));
         showMsg('Record deleted from CRM');
         fetchCRMData();
       } else {

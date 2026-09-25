@@ -39,9 +39,10 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const clients = records.filter(r => r.type === 'client');
-  const projects = records.filter(r => r.type === 'project');
-  const tasks = records.filter(r => ['task', 'deliverable', 'update'].includes(r.type));
+  const safeRecords: CRMRecord[] = Array.isArray(records) ? records : ((records as any)?.records || []);
+  const clients = safeRecords.filter(r => r.type === 'client');
+  const projects = safeRecords.filter(r => r.type === 'project');
+  const tasks = safeRecords.filter(r => ['task', 'deliverable', 'update'].includes(r.type));
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();

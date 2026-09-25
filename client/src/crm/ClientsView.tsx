@@ -31,10 +31,11 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const clients = records.filter(r => r.type === 'client');
-  const projects = records.filter(r => r.type === 'project');
-  const invoices = records.filter(r => r.type === 'invoice' || r.type === 'proposal');
-  const deals = records.filter(r => r.type === 'lead');
+  const safeRecords: CRMRecord[] = Array.isArray(records) ? records : ((records as any)?.records || []);
+  const clients = safeRecords.filter(r => r.type === 'client');
+  const projects = safeRecords.filter(r => r.type === 'project');
+  const invoices = safeRecords.filter(r => r.type === 'invoice' || r.type === 'proposal');
+  const deals = safeRecords.filter(r => r.type === 'lead');
 
   const filteredClients = clients.filter(c => {
     const q = search.toLowerCase();

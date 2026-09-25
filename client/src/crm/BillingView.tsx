@@ -42,8 +42,9 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentRef, setPaymentRef] = useState('');
 
-  const clients = records.filter(r => r.type === 'client');
-  const billingRecords = records.filter(r => 
+  const safeRecords: CRMRecord[] = Array.isArray(records) ? records : ((records as any)?.records || []);
+  const clients = safeRecords.filter(r => r.type === 'client');
+  const billingRecords = safeRecords.filter(r => 
     (r.type === 'invoice' || r.type === 'proposal') &&
     (filterType === 'all' || r.type === filterType)
   );
@@ -55,10 +56,10 @@ export const BillingView: React.FC<BillingViewProps> = ({
   const taxPence = Math.round(taxablePence * (Number(taxRate || 0) / 100));
   const totalPence = taxablePence + taxPence;
 
-  const totalInvoiced = records
+  const totalInvoiced = safeRecords
     .filter(r => r.type === 'invoice')
     .reduce((sum, r) => sum + (r.value || 0), 0);
-  const totalPaid = records
+  const totalPaid = safeRecords
     .filter(r => r.type === 'invoice')
     .reduce((sum, r) => sum + (r.payload?.paid || (r.status === 'paid' ? r.value : 0) || 0), 0);
   const outstandingBalance = Math.max(0, totalInvoiced - totalPaid);
