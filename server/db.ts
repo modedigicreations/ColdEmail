@@ -180,10 +180,144 @@ const INITIAL_CRM_RECORDS: CRMRecord[] = [
   }
 ];
 
+export type StaffRole = 'super_admin' | 'admin' | 'staff';
+
+export interface StaffUser {
+  id: string;
+  name: string;
+  email: string;
+  password?: string;
+  role: StaffRole;
+  title: string;
+  department: string;
+  status: 'active' | 'suspended';
+  avatar?: string;
+  phone?: string;
+  createdAt: string;
+  lastLoginAt?: string;
+}
+
+export interface StaffActivity {
+  id: string;
+  staffId: string;
+  staffName: string;
+  staffEmail: string;
+  staffRole: StaffRole;
+  action: string;
+  description: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  metadata?: Record<string, any>;
+  timestamp: string;
+}
+
+export const INITIAL_STAFF_USERS: StaffUser[] = [
+  {
+    id: "staff-super-adeola",
+    name: "Adeola",
+    email: "adeola@agency.os",
+    password: "admin",
+    role: "super_admin",
+    title: "Agency Founder & Super Admin",
+    department: "Executive Leadership",
+    status: "active",
+    phone: "+44 20 7946 0910",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "staff-admin-ops",
+    name: "Sarah Jenkins",
+    email: "sarah@agency.os",
+    password: "admin",
+    role: "admin",
+    title: "Operations & Delivery Director",
+    department: "Agency Operations",
+    status: "active",
+    phone: "+44 20 7946 0911",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "staff-outreach-marcus",
+    name: "Marcus Vance",
+    email: "marcus@agency.os",
+    password: "staff",
+    role: "staff",
+    title: "Cold Outreach & Discovery Specialist",
+    department: "Outbound Lead Gen",
+    status: "active",
+    phone: "+44 20 7946 0912",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "staff-designer-elena",
+    name: "Elena Rostova",
+    email: "elena@agency.os",
+    password: "staff",
+    role: "staff",
+    title: "Senior UI/UX & Web Designer",
+    department: "Design & Development",
+    status: "active",
+    phone: "+44 20 7946 0913",
+    createdAt: new Date().toISOString()
+  }
+];
+
+export const INITIAL_STAFF_ACTIVITIES: StaffActivity[] = [
+  {
+    id: "act-init-1",
+    staffId: "staff-super-adeola",
+    staffName: "Adeola",
+    staffEmail: "adeola@agency.os",
+    staffRole: "super_admin",
+    action: "system_provisioned",
+    description: "Configured Super Admin privileges, team roles, and automated pipeline rules.",
+    timestamp: new Date(Date.now() - 3600000 * 24).toISOString()
+  },
+  {
+    id: "act-init-2",
+    staffId: "staff-outreach-marcus",
+    staffName: "Marcus Vance",
+    staffEmail: "marcus@agency.os",
+    staffRole: "staff",
+    action: "lead_discovered",
+    description: "Discovered and qualified new outbound lead: Apex Dental Studio.",
+    targetType: "lead",
+    targetName: "Apex Dental Studio",
+    timestamp: new Date(Date.now() - 3600000 * 8).toISOString()
+  },
+  {
+    id: "act-init-3",
+    staffId: "staff-designer-elena",
+    staffName: "Elena Rostova",
+    staffEmail: "elena@agency.os",
+    staffRole: "staff",
+    action: "site_deployed",
+    description: "Generated and deployed tailored AI demo concept website.",
+    targetType: "lead",
+    targetName: "Apex Dental Studio",
+    timestamp: new Date(Date.now() - 3600000 * 5).toISOString()
+  },
+  {
+    id: "act-init-4",
+    staffId: "staff-admin-ops",
+    staffName: "Sarah Jenkins",
+    staffEmail: "sarah@agency.os",
+    staffRole: "admin",
+    action: "proposal_sent",
+    description: "Sent bespoke website proposal and pricing scope.",
+    targetType: "deal",
+    targetName: "Apex Dental — Bespoke Website & Local SEO",
+    timestamp: new Date(Date.now() - 3600000 * 2).toISOString()
+  }
+];
+
 interface DatabaseSchema {
   leads: Lead[];
   settings: Settings;
   crmRecords: CRMRecord[];
+  staff: StaffUser[];
+  activities: StaffActivity[];
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -234,7 +368,13 @@ class Database {
   private data: DatabaseSchema;
 
   constructor() {
-    this.data = { leads: [], settings: DEFAULT_SETTINGS, crmRecords: INITIAL_CRM_RECORDS };
+    this.data = { 
+      leads: [], 
+      settings: DEFAULT_SETTINGS, 
+      crmRecords: INITIAL_CRM_RECORDS,
+      staff: INITIAL_STAFF_USERS,
+      activities: INITIAL_STAFF_ACTIVITIES
+    };
     this.load();
   }
 
@@ -246,7 +386,9 @@ class Database {
         this.data = {
           leads: Array.isArray(parsed.leads) ? parsed.leads : [],
           settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
-          crmRecords: Array.isArray(parsed.crmRecords) && parsed.crmRecords.length > 0 ? parsed.crmRecords : INITIAL_CRM_RECORDS
+          crmRecords: Array.isArray(parsed.crmRecords) && parsed.crmRecords.length > 0 ? parsed.crmRecords : INITIAL_CRM_RECORDS,
+          staff: Array.isArray(parsed.staff) && parsed.staff.length > 0 ? parsed.staff : INITIAL_STAFF_USERS,
+          activities: Array.isArray(parsed.activities) && parsed.activities.length > 0 ? parsed.activities : INITIAL_STAFF_ACTIVITIES
         };
       } else {
         this.save();
@@ -258,7 +400,13 @@ class Database {
           fs.copyFileSync(DB_FILE, `${DB_FILE}.corrupt.${Date.now()}`);
         }
       } catch {}
-      this.data = { leads: [], settings: DEFAULT_SETTINGS, crmRecords: INITIAL_CRM_RECORDS };
+      this.data = { 
+        leads: [], 
+        settings: DEFAULT_SETTINGS, 
+        crmRecords: INITIAL_CRM_RECORDS,
+        staff: INITIAL_STAFF_USERS,
+        activities: INITIAL_STAFF_ACTIVITIES
+      };
       this.save();
     }
   }
@@ -779,6 +927,262 @@ class Database {
 
     this.save();
     return { client, deal };
+  }
+
+  // --- Staff Onboarding, Roles & Activity Audit Methods ---
+
+  getStaff(): StaffUser[] {
+    const list = this.data.staff || INITIAL_STAFF_USERS;
+    const records = this.data.crmRecords || [];
+
+    // Calculate dynamic workload per staff member
+    return list.map(member => {
+      const assignedDeals = records.filter(r => r.type === 'lead' && (r.payload?.assignedStaffId === member.id || r.payload?.assignedStaffEmail === member.email));
+      const assignedProjects = records.filter(r => r.type === 'project' && (r.payload?.assignedStaffId === member.id || r.payload?.assignedStaffEmail === member.email));
+      const assignedTasks = records.filter(r => r.type === 'task' && (r.payload?.assignedStaffId === member.id || r.payload?.owner === member.name));
+
+      return {
+        ...member,
+        assignedDealsCount: assignedDeals.length,
+        assignedProjectsCount: assignedProjects.length,
+        assignedTasksCount: assignedTasks.length
+      } as any;
+    });
+  }
+
+  getStaffMember(id: string): StaffUser | undefined {
+    return (this.data.staff || []).find(s => s.id === id || s.email.toLowerCase() === id.toLowerCase());
+  }
+
+  authenticateStaff(email: string, password?: string): StaffUser | undefined {
+    const cleanEmail = email.trim().toLowerCase();
+    const staff = (this.data.staff || []).find(s => s.email.toLowerCase() === cleanEmail);
+    if (!staff) return undefined;
+
+    // Check password if provided, or allow default demo pass
+    if (password && staff.password && staff.password !== password.trim()) {
+      return undefined;
+    }
+
+    staff.lastLoginAt = new Date().toISOString();
+    this.save();
+
+    // Log sign-in activity
+    this.logActivity({
+      staffId: staff.id,
+      staffName: staff.name,
+      staffEmail: staff.email,
+      staffRole: staff.role,
+      action: 'staff_login',
+      description: `Staff member signed in to workspace: ${staff.name} (${staff.role.replace('_', ' ').toUpperCase()}).`
+    });
+
+    return staff;
+  }
+
+  addStaffMember(staffData: Partial<StaffUser> & { name: string; email: string; role?: StaffRole }): StaffUser {
+    const now = new Date().toISOString();
+    const cleanEmail = staffData.email.trim().toLowerCase();
+
+    // Check if staff already exists
+    let existing = (this.data.staff || []).find(s => s.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      existing = {
+        ...existing,
+        ...staffData,
+        email: cleanEmail
+      };
+      this.save();
+      return existing;
+    }
+
+    const newStaff: StaffUser = {
+      id: staffData.id || `staff-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: staffData.name.trim(),
+      email: cleanEmail,
+      password: staffData.password?.trim() || 'staff123',
+      role: staffData.role || 'staff',
+      title: staffData.title?.trim() || 'Agency Specialist',
+      department: staffData.department?.trim() || 'Outbound & Client Delivery',
+      status: staffData.status || 'active',
+      phone: staffData.phone?.trim() || '',
+      createdAt: now
+    };
+
+    if (!this.data.staff) this.data.staff = [];
+    this.data.staff.push(newStaff);
+    this.save();
+
+    // Log onboarding activity
+    this.logActivity({
+      staffId: newStaff.id,
+      staffName: newStaff.name,
+      staffEmail: newStaff.email,
+      staffRole: newStaff.role,
+      action: 'staff_onboarded',
+      description: `New staff member onboarded: ${newStaff.name} as ${newStaff.role.replace('_', ' ').toUpperCase()} (${newStaff.title} - ${newStaff.department}).`
+    });
+
+    return newStaff;
+  }
+
+  updateStaffMember(id: string, updates: Partial<StaffUser>, actor?: StaffUser): StaffUser | undefined {
+    if (!this.data.staff) return undefined;
+    const index = this.data.staff.findIndex(s => s.id === id);
+    if (index === -1) return undefined;
+
+    const current = this.data.staff[index];
+    const previousRole = current.role;
+    const previousDept = current.department;
+
+    const updated: StaffUser = {
+      ...current,
+      ...updates
+    };
+    this.data.staff[index] = updated;
+    this.save();
+
+    // Log role or department reassignment if changed
+    if (updates.role && updates.role !== previousRole) {
+      this.logActivity({
+        staffId: actor?.id || updated.id,
+        staffName: actor?.name || updated.name,
+        staffEmail: actor?.email || updated.email,
+        staffRole: actor?.role || updated.role,
+        action: 'role_reassigned',
+        description: `Role reassigned for ${updated.name}: from ${previousRole.toUpperCase()} to ${updates.role.toUpperCase()}${actor ? ` by Super Admin ${actor.name}` : ''}.`,
+        targetType: 'staff',
+        targetId: updated.id,
+        targetName: updated.name
+      });
+    } else if (updates.department && updates.department !== previousDept) {
+      this.logActivity({
+        staffId: actor?.id || updated.id,
+        staffName: actor?.name || updated.name,
+        staffEmail: actor?.email || updated.email,
+        staffRole: actor?.role || updated.role,
+        action: 'department_reassigned',
+        description: `Department updated for ${updated.name}: from "${previousDept}" to "${updates.department}".`,
+        targetType: 'staff',
+        targetId: updated.id,
+        targetName: updated.name
+      });
+    }
+
+    return updated;
+  }
+
+  deleteStaffMember(id: string, actor?: StaffUser): boolean {
+    if (!this.data.staff) return false;
+    const index = this.data.staff.findIndex(s => s.id === id);
+    if (index !== -1) {
+      const removed = this.data.staff[index];
+      this.data.staff.splice(index, 1);
+      this.save();
+
+      this.logActivity({
+        staffId: actor?.id || 'system',
+        staffName: actor?.name || 'Super Admin',
+        staffEmail: actor?.email || 'admin@agency.os',
+        staffRole: actor?.role || 'super_admin',
+        action: 'staff_removed',
+        description: `Staff member ${removed.name} (${removed.email}) was removed from workspace.`
+      });
+
+      return true;
+    }
+    return false;
+  }
+
+  reassignWorkload(params: {
+    targetType: 'deal' | 'project' | 'task';
+    targetId: string;
+    newStaffId: string;
+    adminUser?: StaffUser;
+  }): { targetRecord: CRMRecord; newStaff: StaffUser } | undefined {
+    const { targetType, targetId, newStaffId, adminUser } = params;
+    const target = this.getCRMRecord(targetId);
+    const newStaff = this.getStaffMember(newStaffId);
+    if (!target || !newStaff) return undefined;
+
+    const previousAssignee = target.payload?.assignedStaffName || 'Unassigned';
+
+    target.payload = {
+      ...target.payload,
+      assignedStaffId: newStaff.id,
+      assignedStaffName: newStaff.name,
+      assignedStaffEmail: newStaff.email,
+      assignedStaffRole: newStaff.role
+    };
+    target.updatedAt = new Date().toISOString();
+    this.save();
+
+    // Log reassignment activity into full audit trail
+    this.logActivity({
+      staffId: adminUser?.id || newStaff.id,
+      staffName: adminUser?.name || newStaff.name,
+      staffEmail: adminUser?.email || newStaff.email,
+      staffRole: adminUser?.role || 'super_admin',
+      action: 'workload_reassigned',
+      description: `${adminUser?.name || 'Super Admin'} reassigned ${targetType.toUpperCase()} "${target.name}" from ${previousAssignee} to ${newStaff.name} (${newStaff.role.toUpperCase()}).`,
+      targetType,
+      targetId: target.id,
+      targetName: target.name,
+      metadata: { previousAssignee, newStaffId: newStaff.id, newStaffName: newStaff.name }
+    });
+
+    return { targetRecord: target, newStaff };
+  }
+
+  logActivity(act: {
+    staffId?: string;
+    staffName?: string;
+    staffEmail?: string;
+    staffRole?: StaffRole;
+    action: string;
+    description: string;
+    targetType?: string;
+    targetId?: string;
+    targetName?: string;
+    metadata?: Record<string, any>;
+  }): StaffActivity {
+    const activity: StaffActivity = {
+      id: `act-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      staffId: act.staffId || 'system',
+      staffName: act.staffName || 'System Automator',
+      staffEmail: act.staffEmail || 'system@agency.os',
+      staffRole: act.staffRole || 'staff',
+      action: act.action,
+      description: act.description,
+      targetType: act.targetType,
+      targetId: act.targetId,
+      targetName: act.targetName,
+      metadata: act.metadata,
+      timestamp: new Date().toISOString()
+    };
+
+    if (!this.data.activities) this.data.activities = [];
+    this.data.activities.unshift(activity);
+
+    // Keep up to 500 latest activities in log
+    if (this.data.activities.length > 500) {
+      this.data.activities = this.data.activities.slice(0, 500);
+    }
+
+    this.save();
+    return activity;
+  }
+
+  getActivities(filter?: { staffId?: string; action?: string; limit?: number }): StaffActivity[] {
+    let list = this.data.activities || INITIAL_STAFF_ACTIVITIES;
+    if (filter?.staffId && filter.staffId !== 'all') {
+      list = list.filter(a => a.staffId === filter.staffId);
+    }
+    if (filter?.action && filter.action !== 'all') {
+      list = list.filter(a => a.action === filter.action);
+    }
+    const limit = filter?.limit || 100;
+    return list.slice(0, limit);
   }
 
   getCRMSummary() {

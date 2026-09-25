@@ -1113,6 +1113,155 @@ app.post('/api/crm/deals/:id/win', (req, res) => {
   }
 });
 
+// --- Staff Authentication, Roles & Activity Audit Routes ---
+
+// Staff Login
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required.' });
+    }
+    const staff = db.authenticateStaff(email, password);
+    if (!staff) {
+      return res.status(401).json({ error: 'Invalid email or password. Please check your credentials.' });
+    }
+    res.json({
+      success: true,
+      message: `Welcome back, ${staff.name}! (${staff.role.replace('_', ' ').toUpperCase()})`,
+      user: staff
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Staff Onboarding (Self or Admin-driven)
+app.post('/api/auth/onboard', (req, res) => {
+  try {
+    const { name, email, password, role = 'staff', title, department, phone, actorId } = req.body;
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required.' });
+    }
+
+    const actor = actorId ? db.getStaffMember(actorId) : undefined;
+    // Non super-admins cannot onboard super-admins
+    const assignedRole = (role === 'super_admin' && (!actor || actor.role !== 'super_admin')) ? 'staff' : role;
+
+    const newStaff = db.addStaffMember({
+      name,
+      email,
+      password: password || 'staff123',
+      role: assignedRole,
+      title: title || (assignedRole === 'super_admin' ? 'Agency Executive' : assignedRole === 'admin' ? 'Operations Lead' : 'Growth Specialist'),
+      department: department || 'Agency Suite',
+      phone: phone || ''
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Staff member "${newStaff.name}" successfully onboarded as ${newStaff.role.toUpperCase()}!`,
+      user: newStaff
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List all staff members with their workloads
+app.get('/api/staff', (_req, res) => {
+  try {
+    const staff = db.getStaff();
+    res.json({ staff, count: staff.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update Staff (Super Admin assign / reassign role, department, title, or status)
+app.patch('/api/staff/:id', (req, res) => {
+  try {
+    const { role, title, department, status, actorId } = req.body;
+    const actor = actorId ? db.getStaffMember(actorId) : undefined;
+
+    // Enforce Super Admin role permissions for assigning/reassigning roles
+    if (role && actor && actor.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Permission denied: Only a Super Admin can assign or reassign staff roles.' });
+    }
+
+    const updated = db.updateStaffMember(req.params.id, { role, title, department, status }, actor);
+    if (!updated) {
+      return res.status(404).json({ error: 'Staff member not found.' });
+    }
+
+    res.json({
+      success: true,
+      message: `Staff profile for ${updated.name} updated successfully! Role: ${updated.role.toUpperCase()}`,
+      staff: updated
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove staff member
+app.delete('/api/staff/:id', (req, res) => {
+  try {
+    const actorId = req.query.actorId as string | undefined;
+    const actor = actorId ? db.getStaffMember(actorId) : undefined;
+
+    if (actor && actor.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Permission denied: Only a Super Admin can remove staff members.' });
+    }
+
+    const success = db.deleteStaffMember(req.params.id, actor);
+    if (!success) {
+      return res.status(404).json({ error: 'Staff member not found.' });
+    }
+    res.json({ success: true, message: 'Staff member removed from agency.' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Workload Reassignment: Assign / Reassign Deal, Project, or Task to a Staff Member
+app.post('/api/staff/reassign', (req, res) => {
+  try {
+    const { targetType, targetId, newStaffId, actorId } = req.body;
+    if (!targetType || !targetId || !newStaffId) {
+      return res.status(400).json({ error: 'targetType, targetId, and newStaffId are required.' });
+    }
+
+    const actor = actorId ? db.getStaffMember(actorId) : undefined;
+    const result = db.reassignWorkload({ targetType, targetId, newStaffId, adminUser: actor });
+    if (!result) {
+      return res.status(404).json({ error: 'Target record or staff member not found.' });
+    }
+
+    res.json({
+      success: true,
+      message: `${targetType.toUpperCase()} successfully assigned to ${result.newStaff.name} (${result.newStaff.role.toUpperCase()})!`,
+      ...result
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Super Admin Activity Stream: See every activity of every staff member
+app.get('/api/staff/activities', (req, res) => {
+  try {
+    const staffId = req.query.staffId as string | undefined;
+    const action = req.query.action as string | undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 100;
+
+    const activities = db.getActivities({ staffId, action, limit });
+    res.json({ activities, count: activities.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Synchronize all existing leads into pipeline on server initialization
 try {
   const initSync = db.syncAllLeadsToPipeline();

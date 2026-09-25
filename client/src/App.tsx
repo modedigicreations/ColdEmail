@@ -5,16 +5,19 @@ import {
   Play, RefreshCw, XCircle, Search, AlertCircle,
   Monitor, Smartphone, ExternalLink, LayoutTemplate, Server,
   Save, Download, MessageSquare, Phone, Copy, PlusCircle, Check,
-  Target, FolderKanban, ReceiptText, BriefcaseBusiness, PackageCheck, UserPlus
+  Target, FolderKanban, ReceiptText, BriefcaseBusiness, PackageCheck, UserPlus,
+  Shield, Crown
 } from 'lucide-react';
 import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl, generateFallbackWhatsAppPitch } from './whatsapp.js';
-import type { CRMRecord, AgencyService } from './crm/crmTypes';
+import type { CRMRecord, AgencyService, StaffUser } from './crm/crmTypes';
 import { PipelineView } from './crm/PipelineView';
 import { ClientsView } from './crm/ClientsView';
 import { ProjectsView } from './crm/ProjectsView';
 import { BillingView } from './crm/BillingView';
 import { ServicesView } from './crm/ServicesView';
 import { JourneyView } from './crm/JourneyView';
+import { StaffAuthModal } from './crm/StaffAuthModal';
+import { TeamView } from './crm/TeamView';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (
   typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -75,8 +78,27 @@ interface Settings {
 
 export default function App() {
   // Navigation & Tabs (adeolaOS + ColdReach Agency Suite)
-  const [activeTab, setActiveTab] = useState<'outbound' | 'leads' | 'pipeline' | 'clients' | 'projects' | 'billing' | 'journey' | 'services' | 'settings'>('outbound');
+  const [activeTab, setActiveTab] = useState<'outbound' | 'leads' | 'pipeline' | 'clients' | 'projects' | 'billing' | 'journey' | 'services' | 'settings' | 'team'>('outbound');
   const [activeSubTab, setActiveSubTab] = useState<'web_scrape' | 'leadsgorilla' | 'import' | 'manual'>('web_scrape');
+
+  // Staff Account & Authentication
+  const [currentUser, setCurrentUser] = useState<StaffUser>(() => {
+    try {
+      const stored = localStorage.getItem('mode_agency_staff');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return {
+      id: 'staff-adeola',
+      name: 'Adeola (Founder & Super Admin)',
+      email: 'adeola@modedigital.co.uk',
+      role: 'super_admin',
+      department: 'Executive Leadership',
+      activeDealsCount: 4,
+      activeProjectsCount: 3,
+      lastActive: new Date().toISOString()
+    };
+  });
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   // Leads & Data States
   const [leads, setLeads] = useState<Lead[]>(() => {
@@ -1255,6 +1277,13 @@ export default function App() {
             <PackageCheck size={14} /> Client Journey
           </button>
           <button 
+            className={`btn ${activeTab === 'team' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'team' ? undefined : 'none' }}
+            onClick={() => setActiveTab('team')}
+          >
+            <Shield size={14} /> Team & Activity
+          </button>
+          <button 
             className={`btn ${activeTab === 'services' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'services' ? undefined : 'none' }}
             onClick={() => setActiveTab('services')}
@@ -1269,6 +1298,49 @@ export default function App() {
             <SettingsIcon size={14} /> Settings
           </button>
         </div>
+
+        {/* Staff User Profile & Switcher Pill */}
+        <button
+          onClick={() => setShowAuthModal(true)}
+          className="btn btn-secondary"
+          style={{
+            padding: '6px 12px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            borderRadius: '10px',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: currentUser.role === 'super_admin' ? '1px solid rgba(245, 158, 11, 0.4)' : currentUser.role === 'admin' ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-color)',
+            cursor: 'pointer'
+          }}
+          title="Click to sign in, switch staff account, or onboard new staff"
+        >
+          <div style={{
+            width: '26px',
+            height: '26px',
+            borderRadius: '50%',
+            background: currentUser.role === 'super_admin' ? 'linear-gradient(135deg, #f59e0b, #ef4444)' : currentUser.role === 'admin' ? 'linear-gradient(135deg, #3b82f6, #6366f1)' : 'linear-gradient(135deg, #10b981, #059669)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            fontWeight: 700,
+            fontSize: '11px',
+            flexShrink: 0
+          }}>
+            {currentUser.role === 'super_admin' ? <Crown size={13} /> : currentUser.name.charAt(0)}
+          </div>
+          <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+            <div style={{ fontWeight: 600, fontSize: '12px', color: '#fff', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentUser.name}
+            </div>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: currentUser.role === 'super_admin' ? '#f59e0b' : currentUser.role === 'admin' ? '#60a5fa' : '#34d399', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {currentUser.role === 'super_admin' ? 'Super Admin' : currentUser.role === 'admin' ? 'Admin' : 'Staff'}
+            </div>
+          </div>
+          <UserPlus size={13} style={{ color: 'var(--text-muted)', marginLeft: '2px' }} />
+        </button>
       </header>
 
       {/* Global Notification Banner */}
@@ -1819,6 +1891,14 @@ export default function App() {
           records={crmRecords} 
           onUpdateRecord={handleUpdateCRMRecord}
           onCreateRecord={handleCreateCRMRecord}
+        />
+      ) : activeTab === 'team' ? (
+        <TeamView 
+          currentUser={currentUser}
+          crmRecords={crmRecords}
+          onRefreshCRM={fetchCRMData}
+          onNavigateToTab={(tab) => setActiveTab(tab as any)}
+          onOpenOnboarding={() => setShowAuthModal(true)}
         />
       ) : activeTab === 'services' ? (
         <ServicesView 
@@ -3043,6 +3123,20 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Staff Authentication & Onboarding Modal */}
+      {showAuthModal && (
+        <StaffAuthModal 
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          currentUser={currentUser}
+          onLoginSuccess={(staff) => {
+            setCurrentUser(staff);
+            localStorage.setItem('mode_agency_staff', JSON.stringify(staff));
+            showMsg(`Active user changed: ${staff.name} (${staff.role.replace('_', ' ').toUpperCase()})`);
+          }}
+        />
       )}
     </>
   );

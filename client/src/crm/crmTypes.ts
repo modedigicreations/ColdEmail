@@ -56,3 +56,37 @@ export const statusStyles: Record<string, { bg: string; color: string; border: s
   open: { bg: 'rgba(59, 130, 246, 0.12)', color: '#60a5fa', border: 'rgba(59, 130, 246, 0.3)' },
   lost: { bg: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: 'rgba(239, 68, 68, 0.3)' },
 };
+
+export type StaffRole = 'super_admin' | 'admin' | 'staff';
+
+export interface StaffUser {
+  id: string;
+  name: string;
+  email: string;
+  role: StaffRole;
+  title: string;
+  department: string;
+  status: 'active' | 'suspended';
+  avatar?: string;
+  phone?: string;
+  assignedDealsCount?: number;
+  assignedProjectsCount?: number;
+  assignedTasksCount?: number;
+  createdAt?: string;
+  lastLoginAt?: string;
+}
+
+export interface StaffActivity {
+  id: string;
+  staffId: string;
+  staffName: string;
+  staffEmail: string;
+  staffRole: StaffRole;
+  action: string;
+  description: string;
+  targetType?: string;
+  targetId?: string;
+  targetName?: string;
+  metadata?: Record<string, any>;
+  timestamp: string;
+}
