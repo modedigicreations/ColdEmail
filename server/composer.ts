@@ -2,6 +2,7 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import { Lead, Settings } from './db.js';
+import { generateFallbackWhatsAppPitch } from './whatsapp.js';
 
 export async function generateColdEmail(lead: Lead, settings: Settings): Promise<string> {
   const provider = settings.aiProvider || 'claude';
@@ -178,3 +179,140 @@ Conclude the email using the provided contact details and email signature. Do no
     }
   }
 }
+
+export async function generateWhatsAppPitch(lead: Lead, settings: Settings): Promise<string> {
+  const provider = settings.aiProvider || 'gemini';
+  const customPrompt = settings.whatsappPromptTemplate || `You are an elite B2B sales outreach copywriter. Compose a short, punchy, conversational WhatsApp pitch to the business owner or manager.
+Introduce the bespoke, high-converting live demo website redesign we built for their brand (use {{Demo Website}} or {{demoSiteUrl}}).
+Highlight 1-2 core improvements (e.g. mobile responsiveness, ultra-fast load time, modern design) that their current site lacks.
+Keep it brief (under 60 words). Use natural WhatsApp formatting (*bold* for emphasis, clean spacing, polite emoji like 👋 or 🚀). Offer direct value and invite a quick look.`;
+
+  const demoLinkText = lead.demoSiteUrl 
+    ? `Live Custom Demo Website Built For Them: ${lead.demoSiteUrl}` 
+    : 'Live Custom Demo Website Built For Them: N/A';
+
+  const leadContext = `
+Business Name: ${lead.name}
+Category/Niche: ${lead.category || 'N/A'}
+Current Website: ${lead.website || 'N/A'}
+Phone / WhatsApp: ${lead.phone || lead.whatsapp || 'N/A'}
+SEO Score: ${lead.seoScore ? `${lead.seoScore}/100` : 'N/A'}
+Google Business Rating: ${lead.gmbRating ? `${lead.gmbRating}/5` : 'N/A'}
+Identified SEO/Listing Issues: ${lead.seoIssues && lead.seoIssues.length > 0 ? lead.seoIssues.join(', ') : 'None specified'}
+Website Crawled Text: ${lead.crawledText || 'No website content crawled'}
+${demoLinkText}
+  `.trim();
+
+  const prompt = `
+Instructions: ${customPrompt}
+
+Lead Information:
+${leadContext}
+
+CRITICAL RULES:
+1. Output ONLY the raw WhatsApp message text ready to send. No quotes, no markdown fences, no extra preamble.
+2. If a live preview link is provided (${lead.demoSiteUrl || 'N/A'}), enthusiastically include this link!
+3. Keep it brief (under 65 words), conversational, friendly, and close with a low-friction question.
+  `.trim();
+
+  try {
+    if (provider === 'gemini') {
+      const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+      }
+
+      const cleanKey = apiKey.trim();
+      const genAI = new GoogleGenerativeAI(cleanKey);
+      const requestedModel = settings.geminiModel || 'gemini-3.8-flash';
+      const candidateModels = Array.from(new Set([
+        requestedModel,
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash'
+      ]));
+
+      for (const mName of candidateModels) {
+        try {
+          const model = genAI.getGenerativeModel({ model: mName });
+          const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 600, temperature: 0.7 }
+          });
+          const text = result?.response?.text();
+          if (text) return text.trim();
+        } catch (_) {}
+      }
+      return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+    } else if (provider === 'openai') {
+      const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+      }
+
+      const modelName = settings.openaiModel || 'gpt-4o-mini';
+      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: modelName,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 600,
+        temperature: 0.7
+      }, {
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 25000
+      });
+
+      if (response.data?.choices?.[0]?.message?.content) {
+        return response.data.choices[0].message.content.trim();
+      }
+      return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+    } else if (provider === 'deepseek') {
+      const apiKey = settings.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
+      if (!apiKey) {
+        return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+      }
+
+      const response = await axios.post('https://api.deepseek.com/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 600,
+        temperature: 0.7
+      }, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 20000
+      });
+
+      if (response.data?.choices?.[0]?.message?.content) {
+        return response.data.choices[0].message.content.trim();
+      }
+      return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+    } else {
+      // Claude
+      const apiKey = settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+      }
+
+      const anthropic = new Anthropic({ apiKey });
+      const message = await anthropic.messages.create({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 600,
+        temperature: 0.7,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const content = message.content[0];
+      if (content.type === 'text') {
+        return content.text.trim();
+      }
+      return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+    }
+  } catch (err: any) {
+    console.warn('[Composer] WhatsApp AI generation notice:', err.message);
+    return generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl, lead.category);
+  }
+}
+

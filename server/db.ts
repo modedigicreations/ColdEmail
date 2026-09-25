@@ -13,6 +13,9 @@ export interface Lead {
   email?: string;
   website?: string;
   phone?: string;
+  whatsapp?: string;
+  whatsappDraft?: string;
+  whatsappStatus?: 'not_contacted' | 'opened' | 'contacted';
   seoScore?: number;
   gmbRating?: number;
   seoIssues?: string[];
@@ -42,6 +45,7 @@ export interface Settings {
   resendFromEmail: string;
   systemPrompt: string;
   emailSignature: string;
+  whatsappPromptTemplate?: string;
   // Hosting & Subdomain Settings
   hostingProvider: 'wildcard' | 'cpanel' | 'cloudflare' | 'puppeteer_dashboard';
   baseDomain: string;
@@ -79,6 +83,10 @@ const DEFAULT_SETTINGS: Settings = {
 Reference their specific SEO or Google Business Profile issues (like slow website speed, missing SSL, low ratings) if available.
 Crucially, introduce the brand new, high-converting live demo redesign website we built for them at their personalized subdomain (use {{Demo Website}} or {{demoSiteUrl}}).
 Keep it brief (under 150 words), conversational, and offer direct value. Do not sound spammy. Use a friendly tone and close with a clear call to action to review the live preview.`,
+  whatsappPromptTemplate: `You are an elite B2B sales outreach copywriter. Compose a short, punchy, conversational WhatsApp pitch to the business owner or manager.
+Introduce the bespoke, high-converting live demo website redesign we built for their brand (use {{Demo Website}} or {{demoSiteUrl}}).
+Highlight 1-2 core improvements (e.g. mobile responsiveness, ultra-fast load time, modern design) that their current site lacks.
+Keep it brief (under 60 words). Use natural WhatsApp formatting (*bold* for emphasis, clean spacing, polite emoji like 👋 or 🚀). Offer direct value and invite a quick look.`,
   hostingProvider: 'wildcard',
   baseDomain: 'demo.modedigicreations.com',
   cpanelHost: '',

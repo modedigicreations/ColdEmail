@@ -7,9 +7,10 @@ import https from 'https';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Anthropic } from '@anthropic-ai/sdk';
 import { db } from './db.js';
-import { crawlWebsite, parseLeadsGorillaCSV, scrapeLeadsGorilla } from './scraper.js';
-import { generateColdEmail } from './composer.js';
+import { crawlWebsite, parseLeadsCSV, parseLeadsGorillaCSV, scrapeLeadsGorilla, discoverWebLeads } from './scraper.js';
+import { generateColdEmail, generateWhatsAppPitch } from './composer.js';
 import { sendColdEmail } from './gmail.js';
+import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl } from './whatsapp.js';
 import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
 import { getSitesDir } from './hosting/wildcardAdapter.js';
 import { generateWebsiteHtml } from './siteBuilder.js';
@@ -114,14 +115,14 @@ app.delete('/api/leads', (req, res) => {
   }
 });
 
-// Upload Leads Gorilla CSV export
+// Upload CSV export (Leads Gorilla or Generic CSV)
 app.post('/api/leads/upload', upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded.' });
     }
     const csvContent = req.file.buffer.toString('utf-8');
-    const parsedLeads = parseLeadsGorillaCSV(csvContent);
+    const parsedLeads = parseLeadsCSV(csvContent);
     const added = db.addLeads(parsedLeads);
     res.json({ success: true, count: added.length, total: parsedLeads.length });
   } catch (error: any) {
@@ -130,17 +131,64 @@ app.post('/api/leads/upload', upload.single('file'), (req, res) => {
   }
 });
 
+// Add a single lead manually
+app.post('/api/leads/manual', (req, res) => {
+  try {
+    const { name, email, website, phone, whatsapp, category } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Lead / Business Name is required.' });
+    }
+    const cleanPhone = phone ? phone.trim() : undefined;
+    const cleanWhatsapp = (whatsapp && whatsapp.trim()) 
+      ? (sanitizePhoneNumberForWhatsApp(whatsapp.trim()) || whatsapp.trim())
+      : (cleanPhone ? (sanitizePhoneNumberForWhatsApp(cleanPhone) || undefined) : undefined);
+
+    const added = db.addLeads([{
+      name: name.trim(),
+      email: email ? email.trim() : undefined,
+      website: website ? website.trim() : undefined,
+      phone: cleanPhone,
+      whatsapp: cleanWhatsapp,
+      category: category ? category.trim() : 'Local Business',
+      seoScore: 70,
+      gmbRating: 4.5,
+      seoIssues: ['Needs mobile viewport optimization', 'Schema markup missing']
+    }]);
+
+    res.json({ success: true, lead: added[0] });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 let isAutomating = false;
 
-// Trigger automated scraping (Puppeteer)
+// Trigger lead discovery / scraping (Web & AI by default, Leads Gorilla optional)
 app.post('/api/leads/scrape', async (req, res) => {
-  const { keyword, location, email, pass } = req.body;
-  if (!keyword || !location || !email || !pass) {
-    return res.status(400).json({ error: 'Keyword, Location, Leads Gorilla Email and Password are required.' });
+  const { engine = 'web', keyword, location, email, pass, limit = 10 } = req.body;
+  if (!keyword || !location) {
+    return res.status(400).json({ error: 'Keyword and Location are required.' });
   }
 
+  const settings = db.getSettings();
+
   try {
-    const scraped = await scrapeLeadsGorilla({ email, pass }, { keyword, location });
+    let scraped: any[] = [];
+    if (engine === 'leadsgorilla') {
+      if (!email || !pass) {
+        return res.status(400).json({ error: 'Leads Gorilla Email and Password are required when using Leads Gorilla engine.' });
+      }
+      scraped = await scrapeLeadsGorilla({ email, pass }, { keyword, location });
+    } else {
+      // Default: Universal Web & AI discovery (No account required)
+      scraped = await discoverWebLeads({
+        keyword,
+        location,
+        limit: Number(limit) || 10,
+        settings
+      });
+    }
+
     const added = db.addLeads(scraped);
     res.json({ success: true, count: added.length, leads: added });
   } catch (error: any) {
@@ -155,9 +203,12 @@ app.get('/api/leads/automate-all/status', (req, res) => {
 
 // POST start full background automation
 app.post('/api/leads/automate-all', (req, res) => {
-  const { keyword, location, email, pass, subject } = req.body;
-  if (!keyword || !location || !email || !pass || !subject) {
-    return res.status(400).json({ error: 'Keyword, Location, Leads Gorilla Email/Password, and Subject template are required.' });
+  const { engine = 'web', keyword, location, email, pass, subject, limit = 10 } = req.body;
+  if (!keyword || !location || !subject) {
+    return res.status(400).json({ error: 'Keyword, Location, and Subject template are required.' });
+  }
+  if (engine === 'leadsgorilla' && (!email || !pass)) {
+    return res.status(400).json({ error: 'Leads Gorilla Email and Password are required when using Leads Gorilla engine.' });
   }
 
   if (isAutomating) {
@@ -170,12 +221,23 @@ app.post('/api/leads/automate-all', (req, res) => {
   // Run the background worker pipeline
   (async () => {
     try {
-      console.log(`[Automation] Starting scrape for "${keyword}" in "${location}"...`);
-      const scraped = await scrapeLeadsGorilla({ email, pass }, { keyword, location });
+      console.log(`[Automation] Starting scrape (${engine}) for "${keyword}" in "${location}"...`);
+      const settings = db.getSettings();
+
+      let scraped: any[] = [];
+      if (engine === 'leadsgorilla') {
+        scraped = await scrapeLeadsGorilla({ email, pass }, { keyword, location });
+      } else {
+        scraped = await discoverWebLeads({
+          keyword,
+          location,
+          limit: Number(limit) || 10,
+          settings
+        });
+      }
+
       const added = db.addLeads(scraped);
       console.log(`[Automation] Found ${scraped.length} leads. Added ${added.length} new unique leads.`);
-      
-      const settings = db.getSettings();
 
       for (const lead of added) {
         try {
@@ -189,11 +251,13 @@ app.post('/api/leads/automate-all', (req, res) => {
               crawledText = typeof crawlRes === 'string' ? crawlRes : crawlRes.text;
               const emailUpdate = (!lead.email && typeof crawlRes !== 'string' && crawlRes.email) ? crawlRes.email : undefined;
               const phoneUpdate = (!lead.phone && typeof crawlRes !== 'string' && crawlRes.phone) ? crawlRes.phone : undefined;
+              const whatsappUpdate = (!lead.whatsapp && typeof crawlRes !== 'string' && crawlRes.whatsapp) ? crawlRes.whatsapp : undefined;
               db.updateLead(lead.id, { 
                 crawledText, 
                 status: 'crawled',
                 ...(emailUpdate ? { email: emailUpdate } : {}),
-                ...(phoneUpdate ? { phone: phoneUpdate } : {})
+                ...(phoneUpdate ? { phone: phoneUpdate } : {}),
+                ...(whatsappUpdate ? { whatsapp: whatsappUpdate } : {})
               });
             } catch (crawlErr: any) {
               console.error(`[Automation] Crawl failed for lead ${lead.name}:`, crawlErr.message);
@@ -241,13 +305,22 @@ app.post('/api/leads/automate-all', (req, res) => {
           }
           currentLead = db.getLead(currentLead.id)!;
 
-          // 5. Generate Email draft with Live Demo Link
-          console.log(`[Automation] Generating email draft with demo link for lead: ${currentLead.name}`);
+          // 5. Generate Email draft AND WhatsApp pitch with Live Demo Link
+          console.log(`[Automation] Generating email & WhatsApp drafts for lead: ${currentLead.name}`);
           db.updateLead(currentLead.id, { status: 'sending' });
           const draft = await generateColdEmail(currentLead, settings);
-          db.updateLead(currentLead.id, { emailDraft: draft, status: 'drafted' });
+          let waDraft = '';
+          try {
+            waDraft = await generateWhatsAppPitch(currentLead, settings);
+          } catch (_) {}
 
-          // 6. Send outreach email
+          db.updateLead(currentLead.id, { 
+            emailDraft: draft, 
+            ...(waDraft ? { whatsappDraft: waDraft } : {}),
+            status: 'drafted' 
+          });
+
+          // 6. Send outreach email if email is present
           currentLead = db.getLead(currentLead.id)!;
           if (currentLead.email) {
             console.log(`[Automation] Sending outreach email to: ${currentLead.email}`);
@@ -268,10 +341,9 @@ app.post('/api/leads/automate-all', (req, res) => {
             });
             console.log(`[Automation] Sent successfully to ${currentLead.email}`);
           } else {
-            console.log(`[Automation] Skipped sending to ${currentLead.name}: No email address found`);
+            console.log(`[Automation] Completed preparation for ${currentLead.name} (Direct WhatsApp ready)`);
             db.updateLead(currentLead.id, {
-              status: 'failed',
-              error: 'Outreach skipped: No email address found for this lead.'
+              status: 'drafted'
             });
           }
         } catch (leadErr: any) {
@@ -314,17 +386,52 @@ app.post('/api/leads/:id/crawl', async (req, res) => {
     const crawledText = typeof crawlRes === 'string' ? crawlRes : crawlRes.text;
     const emailUpdate = (!lead.email && typeof crawlRes !== 'string' && crawlRes.email) ? crawlRes.email : undefined;
     const phoneUpdate = (!lead.phone && typeof crawlRes !== 'string' && crawlRes.phone) ? crawlRes.phone : undefined;
+    const whatsappUpdate = (!lead.whatsapp && typeof crawlRes !== 'string' && crawlRes.whatsapp) ? crawlRes.whatsapp : undefined;
 
     const updated = db.updateLead(lead.id, {
       crawledText,
       status: 'crawled',
       ...(emailUpdate ? { email: emailUpdate } : {}),
-      ...(phoneUpdate ? { phone: phoneUpdate } : {})
+      ...(phoneUpdate ? { phone: phoneUpdate } : {}),
+      ...(whatsappUpdate ? { whatsapp: whatsappUpdate } : {})
     });
 
     res.json(updated);
   } catch (error: any) {
     db.updateLead(req.params.id, { status: 'failed', error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate AI WhatsApp Pitch
+app.post('/api/leads/:id/draft-whatsapp', async (req, res) => {
+  try {
+    let lead = db.getLead(req.params.id);
+    if (!lead && req.body?.lead) {
+      db.syncLeads([...db.getLeads(), req.body.lead]);
+      lead = db.getLead(req.params.id);
+    }
+    if (!lead) return res.status(404).json({ error: 'Lead not found.' });
+
+    const settings = { ...db.getSettings(), ...(req.body?.settings || {}) };
+    if (req.body?.settings) {
+      db.saveSettings(settings);
+    }
+
+    const pitch = await generateWhatsAppPitch(lead, settings);
+
+    const cleanPhone = lead.whatsapp || lead.phone;
+    const sanitized = sanitizePhoneNumberForWhatsApp(cleanPhone);
+
+    const updated = db.updateLead(lead.id, {
+      whatsappDraft: pitch,
+      ...(sanitized && !lead.whatsapp ? { whatsapp: sanitized } : {}),
+      error: undefined
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    db.updateLead(req.params.id, { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });

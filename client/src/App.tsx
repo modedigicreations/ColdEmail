@@ -4,8 +4,9 @@ import {
   CheckCircle, Loader2, Globe, Trash2, Cpu, Edit,
   Play, RefreshCw, XCircle, Search, AlertCircle,
   Monitor, Smartphone, ExternalLink, LayoutTemplate, Server,
-  Save, Download
+  Save, Download, MessageSquare, Phone, Copy, PlusCircle, Check
 } from 'lucide-react';
+import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl, generateFallbackWhatsAppPitch } from './whatsapp.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (
   typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -20,6 +21,9 @@ interface Lead {
   email?: string;
   website?: string;
   phone?: string;
+  whatsapp?: string;
+  whatsappDraft?: string;
+  whatsappStatus?: 'not_contacted' | 'opened' | 'contacted';
   seoScore?: number;
   gmbRating?: number;
   seoIssues?: string[];
@@ -49,6 +53,7 @@ interface Settings {
   resendFromEmail: string;
   systemPrompt: string;
   emailSignature: string;
+  whatsappPromptTemplate?: string;
   // Hosting & Subdomain
   hostingProvider: 'wildcard' | 'cpanel' | 'cloudflare' | 'puppeteer_dashboard';
   baseDomain: string;
@@ -63,7 +68,7 @@ interface Settings {
 export default function App() {
   // Navigation & Tabs
   const [activeTab, setActiveTab] = useState<'leads' | 'settings'>('leads');
-  const [activeSubTab, setActiveSubTab] = useState<'import' | 'scrape'>('import');
+  const [activeSubTab, setActiveSubTab] = useState<'web_scrape' | 'leadsgorilla' | 'import' | 'manual'>('web_scrape');
 
   // Leads & Data States
   const [leads, setLeads] = useState<Lead[]>(() => {
@@ -89,6 +94,7 @@ export default function App() {
     resendFromEmail: 'onboarding@resend.dev',
     systemPrompt: '',
     emailSignature: '',
+    whatsappPromptTemplate: '',
     hostingProvider: 'wildcard',
     baseDomain: 'demo.modedigicreations.com',
     cpanelHost: '',
@@ -104,7 +110,7 @@ export default function App() {
   const selectedLead = leads.find(l => l.id === selectedLeadId);
 
   // Right Drawer Tab & Viewport
-  const [leadDrawerTab, setLeadDrawerTab] = useState<'website' | 'email'>('website');
+  const [leadDrawerTab, setLeadDrawerTab] = useState<'website' | 'email' | 'whatsapp'>('website');
   const [deviceViewport, setDeviceViewport] = useState<'desktop' | 'mobile'>('desktop');
 
   // Search & Filter
@@ -118,6 +124,7 @@ export default function App() {
       return cached ? JSON.parse(cached) : {
         keyword: 'Dental Clinics',
         location: 'Lagos, Nigeria',
+        limit: 10,
         email: '',
         pass: ''
       };
@@ -125,11 +132,27 @@ export default function App() {
       return {
         keyword: 'Dental Clinics',
         location: 'Lagos, Nigeria',
+        limit: 10,
         email: '',
         pass: ''
       };
     }
   });
+
+  // Manual Lead Form State
+  const [manualLead, setManualLead] = useState({
+    name: '',
+    category: '',
+    website: '',
+    phone: '',
+    whatsapp: '',
+    email: ''
+  });
+
+  // WhatsApp Pitch Edit & Loading States
+  const [editedWhatsappPitch, setEditedWhatsappPitch] = useState('');
+  const [isDraftingWhatsapp, setIsDraftingWhatsapp] = useState(false);
+  const [copiedPitch, setCopiedPitch] = useState(false);
 
   useEffect(() => {
     try {
@@ -166,8 +189,10 @@ export default function App() {
   useEffect(() => {
     if (selectedLead) {
       setEditedBody(selectedLead.emailDraft || '');
+      setEditedWhatsappPitch(selectedLead.whatsappDraft || '');
     } else {
       setEditedBody('');
+      setEditedWhatsappPitch('');
     }
   }, [selectedLeadId, leads]);
 
@@ -405,20 +430,36 @@ export default function App() {
     }
   };
 
-  // Puppeteer Scraping
-  const handleScrapeSubmit = async (e: React.FormEvent) => {
+  // Scraping Handler (Universal Web & AI Discovery or Optional Leads Gorilla)
+  const handleScrapeSubmit = async (e: React.FormEvent, engine: 'web' | 'leadsgorilla' = 'web') => {
     e.preventDefault();
+    if (!scrapeParams.keyword || !scrapeParams.location) {
+      showMsg('Keyword and Location are required.', 'error');
+      return;
+    }
+    if (engine === 'leadsgorilla' && (!scrapeParams.email || !scrapeParams.pass)) {
+      showMsg('Leads Gorilla Email and Password are required when using Leads Gorilla.', 'error');
+      return;
+    }
+
     setIsScraping(true);
-    showMsg('Starting Leads Gorilla search...', 'success');
+    showMsg(engine === 'leadsgorilla' ? 'Starting Leads Gorilla browser search...' : 'Starting Web & AI lead discovery...', 'success');
     try {
       const res = await fetch(`${API_BASE}/leads/scrape`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(scrapeParams)
+        body: JSON.stringify({
+          engine,
+          keyword: scrapeParams.keyword,
+          location: scrapeParams.location,
+          limit: scrapeParams.limit || 10,
+          email: scrapeParams.email,
+          pass: scrapeParams.pass
+        })
       });
       const data = await res.json();
       if (res.ok) {
-        showMsg(`Scrape completed. Added ${data.count} leads.`);
+        showMsg(`Discovery complete! Added ${data.count} new leads.`);
         fetchLeads();
       } else {
         showMsg(data.error || 'Scraping failed', 'error');
@@ -430,23 +471,29 @@ export default function App() {
     }
   };
 
-  // Launch Fully Automated Outreach Campaign (Scrape -> Subdomain -> Site -> Draft -> Send)
-  const handleFullAutomationSubmit = async (e: React.MouseEvent) => {
+  // Launch Fully Automated Outreach Campaign (Scrape -> Subdomain -> Site -> Drafts -> Send)
+  const handleFullAutomationSubmit = async (e: React.MouseEvent, engine: 'web' | 'leadsgorilla' = 'web') => {
     e.preventDefault();
-    if (!scrapeParams.keyword || !scrapeParams.location || !scrapeParams.email || !scrapeParams.pass) {
+    if (!scrapeParams.keyword || !scrapeParams.location) {
+      showMsg('Keyword and Location are required.', 'error');
+      return;
+    }
+    if (engine === 'leadsgorilla' && (!scrapeParams.email || !scrapeParams.pass)) {
       showMsg('Keyword, Location, and Leads Gorilla credentials are required.', 'error');
       return;
     }
 
     setIsFullAutomating(true);
-    showMsg('Launching full pipeline: Scrape -> Subdomain -> AI Site -> Draft -> Send...', 'success');
+    showMsg(`Launching full pipeline (${engine === 'leadsgorilla' ? 'Leads Gorilla' : 'Web & AI Discovery'} -> Subdomain -> AI Site -> Drafts)...`, 'success');
     try {
       const res = await fetch(`${API_BASE}/leads/automate-all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          engine,
           keyword: scrapeParams.keyword,
           location: scrapeParams.location,
+          limit: scrapeParams.limit || 10,
           email: scrapeParams.email,
           pass: scrapeParams.pass,
           subject: emailSubject
@@ -463,6 +510,86 @@ export default function App() {
     } catch (err) {
       showMsg('Network error starting campaign', 'error');
       setIsFullAutomating(false);
+    }
+  };
+
+  // Add Lead Manually
+  const handleManualLeadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualLead.name.trim()) {
+      showMsg('Business / Lead Name is required.', 'error');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/leads/manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manualLead)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMsg(`Lead "${manualLead.name}" added successfully!`, 'success');
+        setManualLead({ name: '', category: '', website: '', phone: '', whatsapp: '', email: '' });
+        fetchLeads();
+      } else {
+        showMsg(data.error || 'Failed to add lead', 'error');
+      }
+    } catch (err) {
+      showMsg('Network error adding lead', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Generate AI WhatsApp Pitch for a Lead
+  const draftLeadWhatsapp = async (id: string) => {
+    const lead = leads.find(l => l.id === id);
+    if (!lead) return;
+
+    setIsDraftingWhatsapp(true);
+    setLoadingLeadId(id);
+    try {
+      const res = await fetch(`${API_BASE}/leads/${id}/draft-whatsapp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead, settings })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to draft WhatsApp pitch');
+      }
+      const updatedLead = await res.json();
+      setLeads(prev => prev.map(l => l.id === id ? updatedLead : l));
+      if (selectedLeadId === id) {
+        setEditedWhatsappPitch(updatedLead.whatsappDraft || '');
+      }
+      showMsg('WhatsApp outreach pitch generated with AI!');
+    } catch (e: any) {
+      showMsg(e.message, 'error');
+    } finally {
+      setIsDraftingWhatsapp(false);
+      setLoadingLeadId(null);
+    }
+  };
+
+  // Save edited WhatsApp Pitch
+  const saveEditedWhatsappDraft = async (id: string) => {
+    setLoadingLeadId(id);
+    try {
+      const res = await fetch(`${API_BASE}/leads/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whatsappDraft: editedWhatsappPitch })
+      });
+      if (res.ok) {
+        showMsg('WhatsApp pitch saved');
+        fetchLeads();
+      }
+    } catch (e) {
+      showMsg('Failed to update WhatsApp draft', 'error');
+    } finally {
+      setLoadingLeadId(null);
     }
   };
 
@@ -628,13 +755,14 @@ export default function App() {
 
   const handleExportCSV = () => {
     if (leads.length === 0) return;
-    const headers = ['Business Name', 'Category', 'Website', 'Email', 'Phone', 'SEO Score', 'GMB Rating', 'Subdomain', 'Demo Site URL', 'Site Status', 'Outreach Status'];
+    const headers = ['Business Name', 'Category', 'Website', 'Email', 'Phone', 'WhatsApp', 'SEO Score', 'GMB Rating', 'Subdomain', 'Demo Site URL', 'Site Status', 'Outreach Status'];
     const rows = leads.map(l => [
       `"${(l.name || '').replace(/"/g, '""')}"`,
       `"${(l.category || '').replace(/"/g, '""')}"`,
       `"${(l.website || '').replace(/"/g, '""')}"`,
       `"${(l.email || '').replace(/"/g, '""')}"`,
       `"${(l.phone || '').replace(/"/g, '""')}"`,
+      `"${(l.whatsapp || '').replace(/"/g, '""')}"`,
       `"${l.seoScore || ''}"`,
       `"${l.gmbRating || ''}"`,
       `"${(l.subdomain || '').replace(/"/g, '""')}"`,
@@ -720,8 +848,22 @@ export default function App() {
         });
         if (draftRes.ok) {
           const updatedLead = await draftRes.json();
+          currentLeadState = updatedLead;
           setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
         }
+
+        // Draft AI WhatsApp Pitch
+        try {
+          const waRes = await fetch(`${API_BASE}/leads/${lead.id}/draft-whatsapp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lead: currentLeadState, settings })
+          });
+          if (waRes.ok) {
+            const updatedLead = await waRes.json();
+            setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+          }
+        } catch (_) {}
       } catch (err: any) {
         console.error(`Error processing lead ${lead.name}:`, err.message);
       }
@@ -1391,6 +1533,20 @@ export default function App() {
             </div>
 
             <div className="form-group">
+              <label>AI WhatsApp Outreach Pitch Prompt</label>
+              <textarea 
+                className="form-control" 
+                rows={3}
+                value={settings.whatsappPromptTemplate || ''}
+                onChange={e => setSettings({ ...settings, whatsappPromptTemplate: e.target.value })}
+                placeholder="Write a concise, conversational, high-converting WhatsApp pitch (under 60 words)..."
+              />
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Tip: Keep WhatsApp pitches punchy and conversational. Supports <code>{"{{Business Name}}"}</code> and <code>{"{{Demo Website}}"}</code>.
+              </p>
+            </div>
+
+            <div className="form-group">
               <label>Email Signature (Concludes all outreach emails)</label>
               <textarea 
                 className="form-control" 
@@ -1437,27 +1593,160 @@ export default function App() {
 
             {/* Ingestion & Scrape Card */}
             <div className="glass-card">
-              <div className="tabs">
+              <div className="tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '16px' }}>
                 <button 
+                  type="button"
+                  className={`tab-btn ${activeSubTab === 'web_scrape' ? 'active' : ''}`}
+                  onClick={() => setActiveSubTab('web_scrape')}
+                >
+                  <Globe size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Instant Web & AI Discovery (Free)
+                </button>
+                <button 
+                  type="button"
+                  className={`tab-btn ${activeSubTab === 'leadsgorilla' ? 'active' : ''}`}
+                  onClick={() => setActiveSubTab('leadsgorilla')}
+                >
+                  <Cpu size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Leads Gorilla (Optional)
+                </button>
+                <button 
+                  type="button"
                   className={`tab-btn ${activeSubTab === 'import' ? 'active' : ''}`}
                   onClick={() => setActiveSubTab('import')}
                 >
-                  <UploadCloud size={16} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> CSV Import (Leads Gorilla)
+                  <UploadCloud size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> CSV Import
                 </button>
                 <button 
-                  className={`tab-btn ${activeSubTab === 'scrape' ? 'active' : ''}`}
-                  onClick={() => setActiveSubTab('scrape')}
+                  type="button"
+                  className={`tab-btn ${activeSubTab === 'manual' ? 'active' : ''}`}
+                  onClick={() => setActiveSubTab('manual')}
                 >
-                  <Cpu size={16} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> Automated Puppeteer Scraper
+                  <PlusCircle size={15} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Add Lead Manually
                 </button>
               </div>
 
-              {activeSubTab === 'import' ? (
+              {activeSubTab === 'web_scrape' && (
+                <form onSubmit={(e) => handleScrapeSubmit(e, 'web')} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: '14px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Target Niche / Keyword</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Dentists, Real Estate, Law Firms"
+                      value={scrapeParams.keyword}
+                      onChange={e => setScrapeParams({ ...scrapeParams, keyword: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Location / City</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Lagos, London, Austin TX"
+                      value={scrapeParams.location}
+                      onChange={e => setScrapeParams({ ...scrapeParams, location: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Max Leads</label>
+                    <select
+                      className="form-control"
+                      value={scrapeParams.limit || 10}
+                      onChange={e => setScrapeParams({ ...scrapeParams, limit: Number(e.target.value) })}
+                    >
+                      <option value={5}>5 leads</option>
+                      <option value={10}>10 leads</option>
+                      <option value={15}>15 leads</option>
+                      <option value={20}>20 leads</option>
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '12px', marginTop: '6px' }}>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary" 
+                      disabled={isScraping || isFullAutomating}
+                    >
+                      {isScraping ? <Loader2 className="animate-spin" size={16} /> : <><Sparkles size={14} style={{ marginRight: '4px' }} /> Discover Leads Only</>}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ background: '#22c55e', borderColor: '#22c55e', color: '#000', fontWeight: 600 }}
+                      disabled={isScraping || isFullAutomating}
+                      onClick={(e) => handleFullAutomationSubmit(e, 'web')}
+                    >
+                      {isFullAutomating ? <Loader2 className="animate-spin" size={16} /> : 'Launch Full Pipeline (Discover → Site → Email & WhatsApp)'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {activeSubTab === 'leadsgorilla' && (
+                <form onSubmit={(e) => handleScrapeSubmit(e, 'leadsgorilla')} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Keyword</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Plumbers"
+                      value={scrapeParams.keyword}
+                      onChange={e => setScrapeParams({ ...scrapeParams, keyword: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Location</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. New York, NY"
+                      value={scrapeParams.location}
+                      onChange={e => setScrapeParams({ ...scrapeParams, location: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Leads Gorilla Email</label>
+                    <input 
+                      type="email" 
+                      className="form-control" 
+                      value={scrapeParams.email}
+                      onChange={e => setScrapeParams({ ...scrapeParams, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Password</label>
+                    <input 
+                      type="password" 
+                      className="form-control" 
+                      value={scrapeParams.pass}
+                      onChange={e => setScrapeParams({ ...scrapeParams, pass: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '12px', marginTop: '6px' }}>
+                    <button 
+                      type="submit" 
+                      className="btn btn-primary" 
+                      disabled={isScraping || isFullAutomating}
+                    >
+                      {isScraping ? <Loader2 className="animate-spin" size={16} /> : 'Scrape with Leads Gorilla'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ background: '#22c55e', borderColor: '#22c55e', color: '#000', fontWeight: 600 }}
+                      disabled={isScraping || isFullAutomating}
+                      onClick={(e) => handleFullAutomationSubmit(e, 'leadsgorilla')}
+                    >
+                      {isFullAutomating ? <Loader2 className="animate-spin" size={16} /> : 'Launch Full Pipeline with Leads Gorilla'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {activeSubTab === 'import' && (
                 <div>
                   <div className="upload-zone" onClick={() => document.getElementById('csv-input')?.click()}>
                     <UploadCloud size={32} color="var(--primary)" style={{ margin: '0 auto 10px' }} />
-                    <p style={{ fontWeight: 500, fontSize: '14px' }}>Click to select or drag & drop Leads Gorilla CSV export</p>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px' }}>Supported fields: Name, Email, Website, Category, SEO Score, SEO Issues</p>
+                    <p style={{ fontWeight: 500, fontSize: '14px' }}>Click to select or drag & drop CSV file (Leads Gorilla or Universal)</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px' }}>Supported columns: Name, Email, Website, Phone / WhatsApp, Category, SEO Score</p>
                     <input 
                       type="file" 
                       id="csv-input" 
@@ -1467,60 +1756,79 @@ export default function App() {
                     />
                   </div>
                 </div>
-              ) : (
-                <form onSubmit={handleScrapeSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div className="form-group">
-                    <label>Keyword</label>
+              )}
+
+              {activeSubTab === 'manual' && (
+                <form onSubmit={handleManualLeadSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Business / Lead Name *</label>
                     <input 
                       type="text" 
                       className="form-control" 
-                      value={scrapeParams.keyword}
-                      onChange={e => setScrapeParams({ ...scrapeParams, keyword: e.target.value })}
+                      placeholder="e.g. Apex Dental Studio"
+                      value={manualLead.name}
+                      onChange={e => setManualLead({ ...manualLead, name: e.target.value })}
+                      required
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Location</label>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Category / Niche</label>
                     <input 
                       type="text" 
                       className="form-control" 
-                      value={scrapeParams.location}
-                      onChange={e => setScrapeParams({ ...scrapeParams, location: e.target.value })}
+                      placeholder="e.g. Healthcare & Dentistry"
+                      value={manualLead.category}
+                      onChange={e => setManualLead({ ...manualLead, category: e.target.value })}
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Leads Gorilla Email</label>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Website URL</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. apexdental.com"
+                      value={manualLead.website}
+                      onChange={e => setManualLead({ ...manualLead, website: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Email Address</label>
                     <input 
                       type="email" 
                       className="form-control" 
-                      value={scrapeParams.email}
-                      onChange={e => setScrapeParams({ ...scrapeParams, email: e.target.value })}
+                      placeholder="e.g. contact@apexdental.com"
+                      value={manualLead.email}
+                      onChange={e => setManualLead({ ...manualLead, email: e.target.value })}
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Password</label>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Phone Number (WhatsApp Target)</label>
                     <input 
-                      type="password" 
+                      type="text" 
                       className="form-control" 
-                      value={scrapeParams.pass}
-                      onChange={e => setScrapeParams({ ...scrapeParams, pass: e.target.value })}
+                      placeholder="e.g. +234 801 234 5678 or 08012345678"
+                      value={manualLead.phone}
+                      onChange={e => setManualLead({ ...manualLead, phone: e.target.value, whatsapp: e.target.value })}
                     />
                   </div>
-                  <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '12px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Custom WhatsApp / Mobile (Optional)</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="Overrides phone if different"
+                      value={manualLead.whatsapp}
+                      onChange={e => setManualLead({ ...manualLead, whatsapp: e.target.value })}
+                    />
+                  </div>
+                  <div style={{ gridColumn: 'span 2', marginTop: '6px' }}>
                     <button 
                       type="submit" 
                       className="btn btn-primary" 
-                      disabled={isScraping || isFullAutomating}
+                      disabled={isLoading || !manualLead.name.trim()}
+                      style={{ width: '100%' }}
                     >
-                      {isScraping ? <Loader2 className="animate-spin" size={16} /> : 'Scrape Leads Only'}
-                    </button>
-                    <button 
-                      type="button" 
-                      className="btn btn-secondary" 
-                      style={{ background: '#22c55e', borderColor: '#22c55e', color: '#000', fontWeight: 600 }}
-                      disabled={isScraping || isFullAutomating}
-                      onClick={handleFullAutomationSubmit}
-                    >
-                      {isFullAutomating ? <Loader2 className="animate-spin" size={16} /> : 'Launch Full Pipeline (Scrape -> Subdomain -> Site -> Send)'}
+                      {isLoading ? <Loader2 className="animate-spin" size={16} /> : <><PlusCircle size={15} style={{ marginRight: '6px' }} /> Add Lead to Campaign Dashboard</>}
                     </button>
                   </div>
                 </form>
@@ -1673,14 +1981,20 @@ export default function App() {
                     <thead>
                       <tr>
                         <th>Lead Name / Niche</th>
-                        <th>Website & Email</th>
+                        <th>Contact & Channels</th>
                         <th>Subdomain & Demo</th>
                         <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredLeads.map(lead => (
+                      {filteredLeads.map(lead => {
+                        const waNumber = lead.whatsapp || lead.phone;
+                        const waUrl = getWhatsAppOutreachUrl(
+                          waNumber,
+                          lead.whatsappDraft || generateFallbackWhatsAppPitch(lead.name, lead.demoSiteUrl)
+                        );
+                        return (
                         <tr 
                           key={lead.id} 
                           onClick={() => setSelectedLeadId(lead.id)}
@@ -1732,6 +2046,32 @@ export default function App() {
                                 }}
                                 placeholder="Add test email"
                               />
+                            </div>
+                            <div style={{ marginTop: '3px' }} onClick={e => e.stopPropagation()}>
+                              {waUrl ? (
+                                <a 
+                                  href={waUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#4ade80',
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: 'rgba(34, 197, 94, 0.1)',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    border: '1px solid rgba(34, 197, 94, 0.25)'
+                                  }}
+                                  title="1-Click WhatsApp Outreach"
+                                >
+                                  <MessageSquare size={11} color="#22c55e" /> {waNumber}
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>No WhatsApp</span>
+                              )}
                             </div>
                           </td>
                           <td>
@@ -1801,6 +2141,17 @@ export default function App() {
                               </button>
                               <button 
                                 className="btn btn-secondary" 
+                                style={{ padding: '6px 8px', fontSize: '12px', borderColor: '#22c55e', color: '#22c55e' }}
+                                onClick={() => {
+                                  setSelectedLeadId(lead.id);
+                                  setLeadDrawerTab('whatsapp');
+                                }}
+                                title="WhatsApp Outreach Pitch"
+                              >
+                                <MessageSquare size={12} />
+                              </button>
+                              <button 
+                                className="btn btn-secondary" 
                                 style={{ padding: '6px 8px', fontSize: '12px' }}
                                 onClick={() => deleteLead(lead.id)}
                                 title="Delete Lead"
@@ -1810,7 +2161,8 @@ export default function App() {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -1882,6 +2234,40 @@ export default function App() {
                       placeholder="Enter target email"
                     />
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <strong>WhatsApp:</strong>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      style={{ 
+                        flex: 1,
+                        padding: '2px 8px', 
+                        fontSize: '12px', 
+                        height: '24px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        color: 'var(--text-main)'
+                      }}
+                      value={selectedLead.whatsapp || selectedLead.phone || ''} 
+                      onChange={(e) => {
+                        const newPhone = e.target.value;
+                        setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, whatsapp: newPhone, phone: newPhone } : l));
+                      }}
+                      onBlur={async (e) => {
+                        try {
+                          await fetch(`${API_BASE}/leads/${selectedLead.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ whatsapp: e.target.value, phone: e.target.value })
+                          });
+                        } catch (err) {
+                          console.error('Failed to sync updated phone/whatsapp', err);
+                        }
+                      }}
+                      placeholder="e.g. +234 801 234 5678"
+                    />
+                  </div>
                   {selectedLead.demoSiteUrl && (
                     <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
                       <div>
@@ -1907,47 +2293,67 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Right Drawer Tab Switcher: Demo Website vs Cold Email */}
+                {/* Right Drawer Tab Switcher: Demo Website vs Cold Email vs WhatsApp */}
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
                   <button 
                     onClick={() => setLeadDrawerTab('website')}
                     style={{ 
                       flex: 1, 
-                      padding: '8px 12px', 
+                      padding: '8px 8px', 
                       background: 'transparent', 
                       border: 'none', 
                       borderBottom: leadDrawerTab === 'website' ? '2px solid #c084fc' : '2px solid transparent',
                       color: leadDrawerTab === 'website' ? '#c084fc' : 'var(--text-muted)',
                       fontWeight: 600,
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '6px'
+                      gap: '4px'
                     }}
                   >
-                    <Globe size={14} /> Live Demo Website
+                    <Globe size={13} /> Live Demo
                   </button>
                   <button 
                     onClick={() => setLeadDrawerTab('email')}
                     style={{ 
                       flex: 1, 
-                      padding: '8px 12px', 
+                      padding: '8px 8px', 
                       background: 'transparent', 
                       border: 'none', 
                       borderBottom: leadDrawerTab === 'email' ? '2px solid var(--primary)' : '2px solid transparent',
                       color: leadDrawerTab === 'email' ? 'var(--primary)' : 'var(--text-muted)',
                       fontWeight: 600,
-                      fontSize: '13px',
+                      fontSize: '12px',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '6px'
+                      gap: '4px'
                     }}
                   >
-                    <Mail size={14} /> Cold Outreach Email
+                    <Mail size={13} /> Cold Email
+                  </button>
+                  <button 
+                    onClick={() => setLeadDrawerTab('whatsapp')}
+                    style={{ 
+                      flex: 1, 
+                      padding: '8px 8px', 
+                      background: 'transparent', 
+                      border: 'none', 
+                      borderBottom: leadDrawerTab === 'whatsapp' ? '2px solid #22c55e' : '2px solid transparent',
+                      color: leadDrawerTab === 'whatsapp' ? '#22c55e' : 'var(--text-muted)',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <MessageSquare size={13} /> WhatsApp
                   </button>
                 </div>
 
@@ -2185,6 +2591,13 @@ export default function App() {
                               Email address is missing. Add test email above to send.
                             </p>
                           )}
+                          <button 
+                            className="btn btn-secondary"
+                            onClick={() => setLeadDrawerTab('whatsapp')}
+                            style={{ width: '100%', marginTop: '10px', borderColor: '#22c55e', color: '#4ade80' }}
+                          >
+                            Next: Open WhatsApp Outreach Pitch →
+                          </button>
                         </div>
                       )}
 
@@ -2194,6 +2607,133 @@ export default function App() {
                           <div>
                             <strong>Action Failed:</strong> {selectedLead.error}
                           </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: WhatsApp Outreach */}
+                {leadDrawerTab === 'whatsapp' && (
+                  <div>
+                    {/* Target WhatsApp Phone Header */}
+                    <div style={{ background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.25)', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Phone size={16} color="#22c55e" />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#4ade80' }}>
+                              {selectedLead.whatsapp || selectedLead.phone ? (
+                                `Target: ${sanitizePhoneNumberForWhatsApp(selectedLead.whatsapp || selectedLead.phone) || selectedLead.whatsapp || selectedLead.phone}`
+                              ) : (
+                                'No WhatsApp Number Set'
+                              )}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              {sanitizePhoneNumberForWhatsApp(selectedLead.whatsapp || selectedLead.phone) ? 'E.164 Validated • Ready for 1-Click Chat' : 'Add phone number above to enable 1-click WhatsApp messaging'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {getWhatsAppOutreachUrl(selectedLead.whatsapp || selectedLead.phone, editedWhatsappPitch || selectedLead.whatsappDraft || generateFallbackWhatsAppPitch(selectedLead.name, selectedLead.demoSiteUrl)) && (
+                          <a
+                            href={getWhatsAppOutreachUrl(selectedLead.whatsapp || selectedLead.phone, editedWhatsappPitch || selectedLead.whatsappDraft || generateFallbackWhatsAppPitch(selectedLead.name, selectedLead.demoSiteUrl))!}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-secondary"
+                            style={{ background: '#22c55e', borderColor: '#22c55e', color: '#000', fontWeight: 600, fontSize: '12px', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <MessageSquare size={13} /> Chat on WhatsApp
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* AI Pitch Composer & Editor */}
+                    <div className="form-group">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>AI WhatsApp Pitch Message</label>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                          onClick={() => {
+                            const pitchToCopy = editedWhatsappPitch || selectedLead.whatsappDraft || generateFallbackWhatsAppPitch(selectedLead.name, selectedLead.demoSiteUrl);
+                            navigator.clipboard.writeText(pitchToCopy);
+                            setCopiedPitch(true);
+                            setTimeout(() => setCopiedPitch(false), 2500);
+                            showMsg('WhatsApp pitch copied to clipboard!');
+                          }}
+                        >
+                          {copiedPitch ? <><Check size={12} color="#22c55e" /> Copied!</> : <><Copy size={12} /> Copy Pitch</>}
+                        </button>
+                      </div>
+
+                      <textarea 
+                        className="form-control" 
+                        rows={8} 
+                        style={{ fontSize: '13px', lineHeight: '1.45', fontFamily: 'monospace' }}
+                        value={editedWhatsappPitch || selectedLead.whatsappDraft || ''}
+                        onChange={e => setEditedWhatsappPitch(e.target.value)}
+                        placeholder="Click below to generate a tailored WhatsApp pitch with AI, or type custom message..."
+                      />
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                        <button 
+                          className="btn btn-secondary"
+                          onClick={() => saveEditedWhatsappDraft(selectedLead.id)}
+                          disabled={loadingLeadId === selectedLead.id || isDraftingWhatsapp}
+                        >
+                          <Edit size={14} /> Save Pitch Draft
+                        </button>
+                        <button 
+                          className="btn btn-secondary"
+                          onClick={() => draftLeadWhatsapp(selectedLead.id)}
+                          disabled={loadingLeadId === selectedLead.id || isDraftingWhatsapp}
+                          style={{ borderColor: '#22c55e', color: '#4ade80' }}
+                        >
+                          {isDraftingWhatsapp ? <Loader2 className="animate-spin" size={14} /> : <><Sparkles size={14} /> Compose Pitch with AI</>}
+                        </button>
+                      </div>
+
+                      {/* Primary WhatsApp Direct Outreach Action Button */}
+                      {getWhatsAppOutreachUrl(selectedLead.whatsapp || selectedLead.phone, editedWhatsappPitch || selectedLead.whatsappDraft || generateFallbackWhatsAppPitch(selectedLead.name, selectedLead.demoSiteUrl)) ? (
+                        <a
+                          href={getWhatsAppOutreachUrl(selectedLead.whatsapp || selectedLead.phone, editedWhatsappPitch || selectedLead.whatsappDraft || generateFallbackWhatsAppPitch(selectedLead.name, selectedLead.demoSiteUrl))!}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-primary"
+                          style={{ 
+                            width: '100%', 
+                            marginTop: '16px', 
+                            background: '#22c55e', 
+                            borderColor: '#22c55e', 
+                            color: '#000', 
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            textDecoration: 'none',
+                            padding: '10px 16px',
+                            borderRadius: '8px'
+                          }}
+                          onClick={() => {
+                            setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, whatsappStatus: 'contacted' } : l));
+                            fetch(`${API_BASE}/leads/${selectedLead.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ whatsappStatus: 'contacted', whatsappDraft: editedWhatsappPitch || selectedLead.whatsappDraft })
+                            }).catch(() => {});
+                          }}
+                        >
+                          <MessageSquare size={16} /> Open WhatsApp Chat with Pre-filled Pitch
+                        </a>
+                      ) : (
+                        <div style={{ marginTop: '16px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px dashed var(--border-color)', textAlign: 'center' }}>
+                          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                            Add a phone number for {selectedLead.name} above to launch direct 1-click WhatsApp chat.
+                          </p>
                         </div>
                       )}
                     </div>
