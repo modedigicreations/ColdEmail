@@ -41,11 +41,15 @@ export const TeamView: React.FC<TeamViewProps> = ({
   const [reassignStaffId, setReassignStaffId] = useState('');
   const [isReassigning, setIsReassigning] = useState(false);
 
-  // Role Edit Modal State
+  // Staff Edit / Security Modal State
   const [editingStaff, setEditingStaff] = useState<StaffUser | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<StaffRole>('staff');
   const [newDepartment, setNewDepartment] = useState('');
-  const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+  const [newPhone, setNewPhone] = useState('');
+  const [isUpdatingStaff, setIsUpdatingStaff] = useState(false);
 
   // Quick Onboard Modal State
   const [showOnboardModal, setShowOnboardModal] = useState(false);
@@ -103,38 +107,47 @@ export const TeamView: React.FC<TeamViewProps> = ({
     }
   };
 
-  const handleUpdateRole = async (e: React.FormEvent) => {
+  const handleUpdateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStaff) return;
-    if (!isSuperAdmin) {
-      showMsg('Permission denied: Only Super Admin can change staff roles.', 'error');
-      return;
-    }
 
-    setIsUpdatingRole(true);
+    setIsUpdatingStaff(true);
     try {
+      const payload: any = {
+        name: newName.trim(),
+        email: newEmail.trim(),
+        department: newDepartment || editingStaff.department,
+        phone: newPhone.trim(),
+        actorId: currentUser.id
+      };
+      if (isSuperAdmin) {
+        payload.role = newRole;
+      }
+      if (newPassword.trim()) {
+        payload.password = newPassword.trim();
+      }
+
       const res = await fetch(`${API_BASE}/staff/${editingStaff.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          role: newRole,
-          department: newDepartment || editingStaff.department,
-          actorId: currentUser.id
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showMsg(data.message || 'Staff role updated');
+        showMsg(data.message || 'Staff profile and credentials updated successfully!');
         setEditingStaff(null);
         fetchStaff();
         fetchActivities();
+        if (editingStaff.id === currentUser.id && data.staff) {
+          localStorage.setItem('mode_agency_staff', JSON.stringify(data.staff));
+        }
       } else {
-        showMsg(data.error || 'Failed to update role', 'error');
+        showMsg(data.error || 'Failed to update staff credentials', 'error');
       }
     } catch (err: any) {
       showMsg(err.message, 'error');
     } finally {
-      setIsUpdatingRole(false);
+      setIsUpdatingStaff(false);
     }
   };
 
@@ -480,8 +493,8 @@ export const TeamView: React.FC<TeamViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Super Admin Management Controls */}
-                  {isSuperAdmin && (
+                  {/* Controls: Edit Profile & Credentials + Assign Workload */}
+                  {(isSuperAdmin || isCurrentUser) && (
                     <div style={{
                       display: 'flex',
                       gap: '8px',
@@ -492,25 +505,32 @@ export const TeamView: React.FC<TeamViewProps> = ({
                       <button
                         onClick={() => {
                           setEditingStaff(staff);
+                          setNewName(staff.name);
+                          setNewEmail(staff.email);
+                          setNewPassword('');
                           setNewRole(staff.role);
                           setNewDepartment(staff.department);
+                          setNewPhone(staff.phone || '');
                         }}
                         className="btn btn-secondary"
                         style={{ flex: 1, padding: '5px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        title="Edit name, email, password, and profile"
                       >
-                        <Edit3 size={12} /> Reassign Role
+                        <Edit3 size={12} /> Edit Profile & Pass
                       </button>
 
-                      <button
-                        onClick={() => {
-                          setReassignStaffId(staff.id);
-                          setShowReassignModal(true);
-                        }}
-                        className="btn btn-secondary"
-                        style={{ flex: 1, padding: '5px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                      >
-                        <ArrowRightLeft size={12} /> Assign Workload
-                      </button>
+                      {isSuperAdmin && (
+                        <button
+                          onClick={() => {
+                            setReassignStaffId(staff.id);
+                            setShowReassignModal(true);
+                          }}
+                          className="btn btn-secondary"
+                          style={{ flex: 1, padding: '5px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        >
+                          <ArrowRightLeft size={12} /> Assign Workload
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -742,39 +762,99 @@ export const TeamView: React.FC<TeamViewProps> = ({
         </div>
       )}
 
-      {/* EDIT ROLE MODAL (SUPER ADMIN ONLY) */}
+      {/* EDIT STAFF & SECURITY CREDENTIALS MODAL */}
       {editingStaff && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px'
         }}>
-          <div className="glass-card" style={{ maxWidth: '440px', width: '100%', padding: '24px' }}>
+          <div className="glass-card" style={{ maxWidth: '480px', width: '100%', padding: '24px' }}>
             <h3 style={{ fontSize: '18px', margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Crown size={18} color="#c084fc" /> Reassign Role for {editingStaff.name}
+              <Edit3 size={18} color="var(--primary)" /> Edit Profile & Credentials for {editingStaff.name}
             </h3>
 
-            <form onSubmit={handleUpdateRole} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label>Assigned Role *</label>
-                <select
-                  className="form-control"
-                  value={newRole}
-                  onChange={e => setNewRole(e.target.value as any)}
-                >
-                  <option value="staff">Staff (Outreach & Design Execution)</option>
-                  <option value="admin">Admin (Operations & Project Management)</option>
-                  <option value="super_admin">Super Admin (Full Oversight & Assignment)</option>
-                </select>
+            <form onSubmit={handleUpdateStaff} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Full Name *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Work Email *</label>
+                  <input
+                    type="email"
+                    className="form-control"
+                    value={newEmail}
+                    onChange={e => setNewEmail(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
 
               <div className="form-group" style={{ margin: 0 }}>
-                <label>Department</label>
+                <label>New Password</label>
+                <input
+                  type="password"
+                  className="form-control"
+                  placeholder="Enter new password (leave blank to keep unchanged)"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Leave blank if you do not wish to reset the password.
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Role {isSuperAdmin ? '*' : '(Read-only)'}</label>
+                  {isSuperAdmin ? (
+                    <select
+                      className="form-control"
+                      value={newRole}
+                      onChange={e => setNewRole(e.target.value as any)}
+                    >
+                      <option value="staff">Staff</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={newRole.toUpperCase()}
+                      disabled
+                    />
+                  )}
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Department</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={newDepartment}
+                    onChange={e => setNewDepartment(e.target.value)}
+                    placeholder="Department name"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Phone / WhatsApp</label>
                 <input
                   type="text"
                   className="form-control"
-                  value={newDepartment}
-                  onChange={e => setNewDepartment(e.target.value)}
-                  placeholder="Department name"
+                  value={newPhone}
+                  onChange={e => setNewPhone(e.target.value)}
+                  placeholder="+44 ..."
                 />
               </div>
 
@@ -782,8 +862,8 @@ export const TeamView: React.FC<TeamViewProps> = ({
                 <button type="button" className="btn btn-secondary" onClick={() => setEditingStaff(null)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={isUpdatingRole}>
-                  {isUpdatingRole ? 'Saving...' : 'Update Staff Role'}
+                <button type="submit" className="btn btn-primary" disabled={isUpdatingStaff || !newName || !newEmail}>
+                  {isUpdatingStaff ? 'Saving...' : 'Save Profile & Credentials'}
                 </button>
               </div>
             </form>

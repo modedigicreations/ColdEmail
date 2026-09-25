@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Shield, Crown, User, Mail, Lock,
-  CheckCircle2, X, AlertCircle
+  CheckCircle2, X, AlertCircle, KeyRound, Phone, Save
 } from 'lucide-react';
 import type { StaffUser, StaffRole } from './crmTypes';
 
@@ -26,8 +26,24 @@ export const StaffAuthModal: React.FC<StaffAuthModalProps> = ({
   onLoginSuccess,
   allowClose = true
 }) => {
-  const [tab, setTab] = useState<'login' | 'onboard'>('login');
+  const [tab, setTab] = useState<'profile' | 'login' | 'onboard'>(() => currentUser ? 'profile' : 'login');
   
+  // Profile & Security Edit State (for currentUser)
+  const [profileName, setProfileName] = useState(currentUser?.name || '');
+  const [profileEmail, setProfileEmail] = useState(currentUser?.email || '');
+  const [profilePhone, setProfilePhone] = useState(currentUser?.phone || '');
+  const [profilePassword, setProfilePassword] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setProfileName(currentUser.name || '');
+      setProfileEmail(currentUser.email || '');
+      setProfilePhone(currentUser.phone || '');
+      setProfilePassword('');
+    }
+  }, [currentUser]);
+
   // Login State
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -46,6 +62,49 @@ export const StaffAuthModal: React.FC<StaffAuthModalProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (!profileName.trim() || !profileEmail.trim()) {
+      setErrorMsg('Full Name and Work Email are required.');
+      return;
+    }
+
+    setIsSavingProfile(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const payload: any = {
+        name: profileName.trim(),
+        email: profileEmail.trim(),
+        phone: profilePhone.trim(),
+        actorId: currentUser.id
+      };
+      if (profilePassword.trim()) {
+        payload.password = profilePassword.trim();
+      }
+
+      const res = await fetch(`${API_BASE}/staff/${currentUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.staff) {
+        setSuccessMsg(data.message || 'Profile and security credentials updated successfully!');
+        setProfilePassword('');
+        localStorage.setItem('mode_agency_staff', JSON.stringify(data.staff));
+        onLoginSuccess(data.staff);
+      } else {
+        setErrorMsg(data.error || 'Failed to update credentials.');
+      }
+    } catch (err: any) {
+      setErrorMsg(`Update error: ${err.message}`);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,38 +269,56 @@ export const StaffAuthModal: React.FC<StaffAuthModalProps> = ({
         {/* Mode Switcher Tabs */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          gridTemplateColumns: currentUser ? '1.2fr 1fr 1fr' : '1fr 1fr',
           background: 'rgba(255, 255, 255, 0.04)',
           borderRadius: '10px',
           padding: '4px',
           marginBottom: '20px',
           border: '1px solid var(--border-color)'
         }}>
+          {currentUser && (
+            <button
+              onClick={() => { setTab('profile'); setErrorMsg(null); setSuccessMsg(null); }}
+              style={{
+                padding: '8px',
+                borderRadius: '8px',
+                border: 'none',
+                background: tab === 'profile' ? 'var(--primary)' : 'transparent',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.2s ease'
+              }}
+            >
+              My Profile & Pass
+            </button>
+          )}
           <button
-            onClick={() => { setTab('login'); setErrorMsg(null); }}
+            onClick={() => { setTab('login'); setErrorMsg(null); setSuccessMsg(null); }}
             style={{
               padding: '8px',
               borderRadius: '8px',
               border: 'none',
               background: tab === 'login' ? 'var(--primary)' : 'transparent',
               color: '#fff',
-              fontSize: '13px',
+              fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
               transition: 'background 0.2s ease'
             }}
           >
-            Staff Sign In
+            {currentUser ? 'Switch Account' : 'Staff Sign In'}
           </button>
           <button
-            onClick={() => { setTab('onboard'); setErrorMsg(null); }}
+            onClick={() => { setTab('onboard'); setErrorMsg(null); setSuccessMsg(null); }}
             style={{
               padding: '8px',
               borderRadius: '8px',
               border: 'none',
               background: tab === 'onboard' ? 'var(--primary)' : 'transparent',
               color: '#fff',
-              fontSize: '13px',
+              fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
               transition: 'background 0.2s ease'
@@ -287,104 +364,213 @@ export const StaffAuthModal: React.FC<StaffAuthModalProps> = ({
           </div>
         )}
 
-        {/* 1-Click Fast Persona Switcher */}
-        <div style={{
-          background: 'rgba(139, 92, 246, 0.05)',
-          border: '1px dashed rgba(139, 92, 246, 0.25)',
-          borderRadius: '10px',
-          padding: '12px',
-          marginBottom: '18px'
-        }}>
-          <span style={{ fontSize: '11px', color: '#c084fc', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
-            ⚡ 1-Click Demo Accounts (Switch & Test Instantly):
-          </span>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '8px' }}>
-            <button
-              onClick={() => handleQuickLogin('adeola@agency.os')}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '6px 8px', borderColor: 'rgba(139, 92, 246, 0.4)', textAlign: 'left' }}
-              title="Super Admin: Full agency oversight, staff assignment & full audit log"
-            >
-              👑 Adeola <br/>
-              <span style={{ fontSize: '10px', color: '#c084fc' }}>Super Admin</span>
-            </button>
+        {tab === 'profile' && currentUser ? (
+          /* MY PROFILE & SECURITY CREDENTIALS FORM */
+          <form onSubmit={handleUpdateProfile} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CURRENT ROLE & DEPARTMENT</div>
+                <div style={{ fontWeight: 700, fontSize: '13px', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {currentUser.role === 'super_admin' ? '👑 Super Admin' : currentUser.role === 'admin' ? '🛡️ Admin' : '💼 Staff'} • {currentUser.department}
+                </div>
+              </div>
+              <span style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                background: currentUser.role === 'super_admin' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                color: currentUser.role === 'super_admin' ? '#f59e0b' : '#60a5fa',
+                fontWeight: 600
+              }}>
+                Active Session
+              </span>
+            </div>
 
-            <button
-              onClick={() => handleQuickLogin('sarah@agency.os')}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '6px 8px', textAlign: 'left' }}
-              title="Admin: Operations & Project Desk"
-            >
-              🛡️ Sarah <br/>
-              <span style={{ fontSize: '10px', color: '#60a5fa' }}>Admin</span>
-            </button>
-
-            <button
-              onClick={() => handleQuickLogin('marcus@agency.os')}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '6px 8px', textAlign: 'left' }}
-              title="Staff: Outbound Discovery & Pitching"
-            >
-              💼 Marcus <br/>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Staff (Outreach)</span>
-            </button>
-
-            <button
-              onClick={() => handleQuickLogin('elena@agency.os')}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '6px 8px', textAlign: 'left' }}
-              title="Staff: Creative UX & Delivery"
-            >
-              🎨 Elena <br/>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Staff (Design)</span>
-            </button>
-          </div>
-        </div>
-
-        {tab === 'login' ? (
-          /* LOGIN FORM */
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div className="form-group" style={{ margin: 0 }}>
-              <label style={{ fontSize: '12px', fontWeight: 600 }}>Staff Work Email</label>
+              <label style={{ fontSize: '12px', fontWeight: 600 }}>Your Full Name *</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Adeola"
+                  value={profileName}
+                  onChange={e => setProfileName(e.target.value)}
+                  required
+                  style={{ paddingLeft: '34px' }}
+                />
+                <User size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontSize: '12px', fontWeight: 600 }}>Your Work Email *</label>
               <div style={{ position: 'relative' }}>
                 <input
                   type="email"
                   className="form-control"
-                  placeholder="name@agency.os"
-                  value={loginEmail}
-                  onChange={e => setLoginEmail(e.target.value)}
+                  placeholder="adeola@agency.os"
+                  value={profileEmail}
+                  onChange={e => setProfileEmail(e.target.value)}
                   required
                   style={{ paddingLeft: '34px' }}
                 />
                 <Mail size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
               </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                Used to log in to this workspace and receive notifications.
+              </p>
             </div>
 
             <div className="form-group" style={{ margin: 0 }}>
-              <label style={{ fontSize: '12px', fontWeight: 600 }}>Password</label>
+              <label style={{ fontSize: '12px', fontWeight: 600 }}>Phone / WhatsApp Contact</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="+44 7911 234567"
+                  value={profilePhone}
+                  onChange={e => setProfilePhone(e.target.value)}
+                  style={{ paddingLeft: '34px' }}
+                />
+                <Phone size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontSize: '12px', fontWeight: 600 }}>New Password</label>
               <div style={{ position: 'relative' }}>
                 <input
                   type="password"
                   className="form-control"
-                  placeholder="Enter password (default: admin / staff)"
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
+                  placeholder="Enter new password (leave blank to keep unchanged)"
+                  value={profilePassword}
+                  onChange={e => setProfilePassword(e.target.value)}
                   style={{ paddingLeft: '34px' }}
                 />
-                <Lock size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
+                <KeyRound size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
               </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                Leave empty if you don't want to change your current password.
+              </p>
             </div>
 
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={isLoading || !loginEmail.trim()}
-              style={{ width: '100%', marginTop: '6px', padding: '10px' }}
+              disabled={isSavingProfile || !profileName.trim() || !profileEmail.trim()}
+              style={{ width: '100%', marginTop: '6px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              {isLoading ? 'Verifying...' : 'Sign In to Workspace'}
+              <Save size={16} /> {isSavingProfile ? 'Saving Changes...' : 'Save Profile & Credentials'}
             </button>
           </form>
         ) : (
+          <>
+            {/* 1-Click Fast Persona Switcher */}
+            <div style={{
+              background: 'rgba(139, 92, 246, 0.05)',
+              border: '1px dashed rgba(139, 92, 246, 0.25)',
+              borderRadius: '10px',
+              padding: '12px',
+              marginBottom: '18px'
+            }}>
+              <span style={{ fontSize: '11px', color: '#c084fc', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+                ⚡ 1-Click Demo Accounts (Switch & Test Instantly):
+              </span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '8px' }}>
+                <button
+                  onClick={() => handleQuickLogin('adeola@agency.os')}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '6px 8px', borderColor: 'rgba(139, 92, 246, 0.4)', textAlign: 'left' }}
+                  title="Super Admin: Full agency oversight, staff assignment & full audit log"
+                >
+                  👑 Adeola <br/>
+                  <span style={{ fontSize: '10px', color: '#c084fc' }}>Super Admin</span>
+                </button>
+
+                <button
+                  onClick={() => handleQuickLogin('sarah@agency.os')}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '6px 8px', textAlign: 'left' }}
+                  title="Admin: Operations & Project Desk"
+                >
+                  🛡️ Sarah <br/>
+                  <span style={{ fontSize: '10px', color: '#60a5fa' }}>Admin</span>
+                </button>
+
+                <button
+                  onClick={() => handleQuickLogin('marcus@agency.os')}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '6px 8px', textAlign: 'left' }}
+                  title="Staff: Outbound Discovery & Pitching"
+                >
+                  💼 Marcus <br/>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Staff (Outreach)</span>
+                </button>
+
+                <button
+                  onClick={() => handleQuickLogin('elena@agency.os')}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '6px 8px', textAlign: 'left' }}
+                  title="Staff: Creative UX & Delivery"
+                >
+                  🎨 Elena <br/>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Staff (Design)</span>
+                </button>
+              </div>
+            </div>
+
+            {tab === 'login' ? (
+              /* LOGIN FORM */
+              <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600 }}>Staff Work Email</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="email"
+                      className="form-control"
+                      placeholder="name@agency.os"
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      required
+                      style={{ paddingLeft: '34px' }}
+                    />
+                    <Mail size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600 }}>Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="password"
+                      className="form-control"
+                      placeholder="Enter password (default: admin / staff)"
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      style={{ paddingLeft: '34px' }}
+                    />
+                    <Lock size={15} style={{ position: 'absolute', left: '11px', top: '13px', color: 'var(--text-muted)' }} />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isLoading || !loginEmail.trim()}
+                  style={{ width: '100%', marginTop: '6px', padding: '10px' }}
+                >
+                  {isLoading ? 'Verifying...' : 'Sign In to Workspace'}
+                </button>
+              </form>
+            ) : (
           /* ONBOARDING FORM */
           <form onSubmit={handleOnboard} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -528,6 +714,8 @@ export const StaffAuthModal: React.FC<StaffAuthModalProps> = ({
               {isLoading ? 'Onboarding...' : 'Complete Staff Onboarding'}
             </button>
           </form>
+            )}
+          </>
         )}
       </div>
     </div>

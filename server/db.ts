@@ -1037,6 +1037,21 @@ class Database {
     const current = this.data.staff[index];
     const previousRole = current.role;
     const previousDept = current.department;
+    const previousEmail = current.email;
+
+    // Validate email uniqueness if changing email
+    if (updates.email && updates.email.trim()) {
+      const cleanEmail = updates.email.trim().toLowerCase();
+      const existing = this.data.staff.find(s => s.id !== id && s.email.toLowerCase() === cleanEmail);
+      if (existing) {
+        throw new Error(`Email "${cleanEmail}" is already in use by ${existing.name}.`);
+      }
+      updates.email = cleanEmail;
+    }
+
+    if (updates.password) {
+      updates.password = updates.password.trim();
+    }
 
     const updated: StaffUser = {
       ...current,
@@ -1044,6 +1059,28 @@ class Database {
     };
     this.data.staff[index] = updated;
     this.save();
+
+    // Log credential changes (email or password)
+    if ((updates.email && updates.email !== previousEmail) || updates.password) {
+      const changes: string[] = [];
+      if (updates.email && updates.email !== previousEmail) {
+        changes.push(`email to "${updates.email}"`);
+      }
+      if (updates.password) {
+        changes.push(`password`);
+      }
+      this.logActivity({
+        staffId: actor?.id || updated.id,
+        staffName: actor?.name || updated.name,
+        staffEmail: actor?.email || updated.email,
+        staffRole: actor?.role || updated.role,
+        action: 'credentials_updated',
+        description: `Security credentials updated for ${updated.name}: modified ${changes.join(' and ')}${actor && actor.id !== updated.id ? ` by ${actor.name} (${actor.role.toUpperCase()})` : ''}.`,
+        targetType: 'staff',
+        targetId: updated.id,
+        targetName: updated.name
+      });
+    }
 
     // Log role or department reassignment if changed
     if (updates.role && updates.role !== previousRole) {

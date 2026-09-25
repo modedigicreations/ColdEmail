@@ -1178,25 +1178,48 @@ app.get('/api/staff', (_req, res) => {
   }
 });
 
-// Update Staff (Super Admin assign / reassign role, department, title, or status)
+// Update Staff (Edit profile, email, password, or Super Admin role reassignment)
 app.patch('/api/staff/:id', (req, res) => {
   try {
-    const { role, title, department, status, actorId } = req.body;
+    const { name, email, password, phone, role, title, department, status, actorId } = req.body;
     const actor = actorId ? db.getStaffMember(actorId) : undefined;
+    const targetStaff = db.getStaffMember(req.params.id);
 
-    // Enforce Super Admin role permissions for assigning/reassigning roles
-    if (role && actor && actor.role !== 'super_admin') {
-      return res.status(403).json({ error: 'Permission denied: Only a Super Admin can assign or reassign staff roles.' });
+    if (!targetStaff) {
+      return res.status(404).json({ error: 'Staff member not found.' });
     }
 
-    const updated = db.updateStaffMember(req.params.id, { role, title, department, status }, actor);
+    const isSelf = actor && actor.id === req.params.id;
+    const isSuperAdmin = actor && actor.role === 'super_admin';
+
+    // Role changes require Super Admin
+    if (role && role !== targetStaff.role && !isSuperAdmin) {
+      return res.status(403).json({ error: 'Permission denied: Only a Super Admin can change staff roles.' });
+    }
+
+    // Editing another staff member requires Super Admin
+    if (actor && !isSelf && !isSuperAdmin) {
+      return res.status(403).json({ error: 'Permission denied: You can only edit your own profile and security credentials.' });
+    }
+
+    const updates: any = {};
+    if (name !== undefined) updates.name = name;
+    if (email !== undefined) updates.email = email;
+    if (password !== undefined && password.trim()) updates.password = password.trim();
+    if (phone !== undefined) updates.phone = phone;
+    if (title !== undefined) updates.title = title;
+    if (department !== undefined) updates.department = department;
+    if (status !== undefined) updates.status = status;
+    if (role !== undefined && (isSuperAdmin || !actor)) updates.role = role;
+
+    const updated = db.updateStaffMember(req.params.id, updates, actor);
     if (!updated) {
       return res.status(404).json({ error: 'Staff member not found.' });
     }
 
     res.json({
       success: true,
-      message: `Staff profile for ${updated.name} updated successfully! Role: ${updated.role.toUpperCase()}`,
+      message: `Profile and credentials for ${updated.name} updated successfully!`,
       staff: updated
     });
   } catch (error: any) {
