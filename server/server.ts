@@ -6,7 +6,7 @@ import axios from 'axios';
 import https from 'https';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Anthropic } from '@anthropic-ai/sdk';
-import { db } from './db.js';
+import { db, DEFAULT_SERVICES } from './db.js';
 import { crawlWebsite, parseLeadsCSV, parseLeadsGorillaCSV, scrapeLeadsGorilla, discoverWebLeads } from './scraper.js';
 import { generateColdEmail, generateWhatsAppPitch } from './composer.js';
 import { sendColdEmail } from './gmail.js';
@@ -977,6 +977,103 @@ app.post('/api/settings', (req, res) => {
   try {
     const updated = db.saveSettings(req.body);
     res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- CRM & Pipeline Endpoints ---
+
+// Get all CRM records or filter by type
+app.get('/api/crm', (req, res) => {
+  try {
+    const type = req.query.type as string | undefined;
+    const records = db.getCRMRecords(type);
+    res.json({ records, count: records.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get agency services catalog
+app.get('/api/crm/services', (_req, res) => {
+  try {
+    res.json(DEFAULT_SERVICES);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get CRM summary stats
+app.get('/api/crm/summary', (_req, res) => {
+  try {
+    const summary = db.getCRMSummary();
+    res.json(summary);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create CRM record
+app.post('/api/crm', (req, res) => {
+  try {
+    const { type, name, clientId, status, value, payload } = req.body;
+    if (!type || !name) {
+      return res.status(400).json({ error: 'Type and name are required' });
+    }
+    const record = db.addCRMRecord({
+      type,
+      name,
+      clientId,
+      status,
+      value,
+      payload
+    });
+    res.status(201).json({ record });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update CRM record
+app.patch('/api/crm/:id', (req, res) => {
+  try {
+    const updated = db.updateCRMRecord(req.params.id, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    res.json({ record: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete CRM record
+app.delete('/api/crm/:id', (req, res) => {
+  try {
+    const success = db.deleteCRMRecord(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Record not found' });
+    }
+    res.json({ success: true, id: req.params.id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Seamless bridge: Convert Outbound Lead into CRM Client & Sales Deal
+app.post('/api/crm/convert-lead/:id', (req, res) => {
+  try {
+    const result = db.convertLeadToCRM(req.params.id);
+    if (!result) {
+      return res.status(404).json({ error: 'Outbound lead not found' });
+    }
+    res.json({
+      success: true,
+      message: `Lead converted to CRM Client "${result.client.name}" and Deal created in Pipeline!`,
+      client: result.client,
+      deal: result.deal
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

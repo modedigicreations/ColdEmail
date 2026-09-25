@@ -4,9 +4,17 @@ import {
   CheckCircle, Loader2, Globe, Trash2, Cpu, Edit,
   Play, RefreshCw, XCircle, Search, AlertCircle,
   Monitor, Smartphone, ExternalLink, LayoutTemplate, Server,
-  Save, Download, MessageSquare, Phone, Copy, PlusCircle, Check
+  Save, Download, MessageSquare, Phone, Copy, PlusCircle, Check,
+  Target, FolderKanban, ReceiptText, BriefcaseBusiness, PackageCheck, UserPlus
 } from 'lucide-react';
 import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl, generateFallbackWhatsAppPitch } from './whatsapp.js';
+import type { CRMRecord, AgencyService } from './crm/crmTypes';
+import { PipelineView } from './crm/PipelineView';
+import { ClientsView } from './crm/ClientsView';
+import { ProjectsView } from './crm/ProjectsView';
+import { BillingView } from './crm/BillingView';
+import { ServicesView } from './crm/ServicesView';
+import { JourneyView } from './crm/JourneyView';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (
   typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -66,8 +74,8 @@ interface Settings {
 }
 
 export default function App() {
-  // Navigation & Tabs
-  const [activeTab, setActiveTab] = useState<'leads' | 'settings'>('leads');
+  // Navigation & Tabs (adeolaOS + ColdReach Agency Suite)
+  const [activeTab, setActiveTab] = useState<'outbound' | 'leads' | 'pipeline' | 'clients' | 'projects' | 'billing' | 'journey' | 'services' | 'settings'>('outbound');
   const [activeSubTab, setActiveSubTab] = useState<'web_scrape' | 'leadsgorilla' | 'import' | 'manual'>('web_scrape');
 
   // Leads & Data States
@@ -154,6 +162,12 @@ export default function App() {
   const [isDraftingWhatsapp, setIsDraftingWhatsapp] = useState(false);
   const [copiedPitch, setCopiedPitch] = useState(false);
 
+  // adeolaOS Agency CRM States
+  const [crmRecords, setCrmRecords] = useState<CRMRecord[]>([]);
+  const [crmServices, setCrmServices] = useState<AgencyService[]>([]);
+  const [crmSummary, setCrmSummary] = useState<any>(null);
+  const [convertingLeadId, setConvertingLeadId] = useState<string | null>(null);
+
   useEffect(() => {
     try {
       localStorage.setItem('coldreach_scrape_params', JSON.stringify(scrapeParams));
@@ -184,6 +198,7 @@ export default function App() {
     fetchLeads();
     fetchSettings();
     checkAutomationStatus();
+    fetchCRMData();
   }, []);
 
   useEffect(() => {
@@ -263,6 +278,106 @@ export default function App() {
         } catch {}
       }
       showMsg('Failed to load leads from backend', 'error');
+    }
+  };
+
+  // adeolaOS CRM & Agency Operations Handlers
+  const fetchCRMData = async () => {
+    try {
+      const [recRes, servRes, sumRes] = await Promise.all([
+        fetch(`${API_BASE}/crm`),
+        fetch(`${API_BASE}/crm/services`),
+        fetch(`${API_BASE}/crm/summary`)
+      ]);
+      if (recRes.ok) {
+        const records = await recRes.json();
+        setCrmRecords(records);
+      }
+      if (servRes.ok) {
+        const services = await servRes.json();
+        setCrmServices(services);
+      }
+      if (sumRes.ok) {
+        const summary = await sumRes.json();
+        setCrmSummary(summary);
+      }
+    } catch (err) {
+      console.error('Failed to fetch CRM data:', err);
+    }
+  };
+
+  const handleCreateCRMRecord = async (data: Partial<CRMRecord>) => {
+    try {
+      const res = await fetch(`${API_BASE}/crm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setCrmRecords(prev => [created, ...prev]);
+        showMsg(`Created ${data.type || 'record'} successfully!`);
+        fetchCRMData();
+      } else {
+        showMsg('Failed to create CRM record', 'error');
+      }
+    } catch (err) {
+      showMsg('Failed to create CRM record', 'error');
+    }
+  };
+
+  const handleUpdateCRMRecord = async (id: string, updates: Partial<CRMRecord>) => {
+    try {
+      const res = await fetch(`${API_BASE}/crm/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setCrmRecords(prev => prev.map(r => r.id === id ? updated : r));
+        fetchCRMData();
+      } else {
+        showMsg('Failed to update CRM record', 'error');
+      }
+    } catch (err) {
+      showMsg('Failed to update CRM record', 'error');
+    }
+  };
+
+  const handleDeleteCRMRecord = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/crm/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setCrmRecords(prev => prev.filter(r => r.id !== id));
+        showMsg('Record deleted from CRM');
+        fetchCRMData();
+      } else {
+        showMsg('Failed to delete CRM record', 'error');
+      }
+    } catch (err) {
+      showMsg('Failed to delete CRM record', 'error');
+    }
+  };
+
+  const handleConvertLeadToCRM = async (leadId: string) => {
+    setConvertingLeadId(leadId);
+    try {
+      const res = await fetch(`${API_BASE}/crm/convert-lead/${leadId}`, {
+        method: 'POST'
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        showMsg(`Lead converted to Client "${result.client?.name}" & added to Pipeline!`);
+        await fetchCRMData();
+        setActiveTab('pipeline');
+      } else {
+        showMsg(result.error || 'Failed to convert lead to CRM', 'error');
+      }
+    } catch (err: any) {
+      showMsg(`Conversion error: ${err.message}`, 'error');
+    } finally {
+      setConvertingLeadId(null);
     }
   };
 
@@ -1027,26 +1142,83 @@ export default function App() {
 
   return (
     <>
-      {/* Navbar Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <h1 className="text-gradient" style={{ fontSize: '32px', margin: 0, fontWeight: 800 }}>ColdReach AI</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            Autonomous Lead-to-Website-to-Email Cold Outreach Engine
-          </p>
+      {/* Navbar Header (adeolaOS + ColdReach Agency Suite) */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'linear-gradient(135deg, #a855f7, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 14px rgba(168, 85, 247, 0.35)' }}>
+            <BriefcaseBusiness size={22} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h1 className="text-gradient" style={{ fontSize: '24px', margin: 0, fontWeight: 800 }}>Adeola & Mode OS</h1>
+              <span style={{ fontSize: '11px', background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', padding: '2px 8px', borderRadius: '999px', border: '1px solid rgba(168, 85, 247, 0.3)', fontWeight: 600 }}>Agency Suite</span>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '2px', margin: 0 }}>
+              Lead Discovery • AI Sites • Cold Outreach • CRM Pipeline • Invoicing • Client Delivery
+              {crmSummary && (
+                <span style={{ marginLeft: '8px', color: '#c084fc', fontSize: '12px', fontWeight: 600 }}>
+                  (Pipeline: £{((crmSummary.pipelineValuePence || 0) / 100).toLocaleString()} • {crmSummary.totalClients || 0} Clients)
+                </span>
+              )}
+            </p>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', background: 'rgba(255, 255, 255, 0.03)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
           <button 
-            className={`btn ${activeTab === 'leads' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('leads')}
+            className={`btn ${activeTab === 'outbound' || activeTab === 'leads' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: (activeTab === 'outbound' || activeTab === 'leads') ? undefined : 'none' }}
+            onClick={() => setActiveTab('outbound')}
           >
-            <Users size={16} /> Dashboard
+            <Users size={14} /> Outbound Leads
+          </button>
+          <button 
+            className={`btn ${activeTab === 'pipeline' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'pipeline' ? undefined : 'none' }}
+            onClick={() => setActiveTab('pipeline')}
+          >
+            <Target size={14} /> Pipeline
+          </button>
+          <button 
+            className={`btn ${activeTab === 'clients' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'clients' ? undefined : 'none' }}
+            onClick={() => setActiveTab('clients')}
+          >
+            <BriefcaseBusiness size={14} /> Clients
+          </button>
+          <button 
+            className={`btn ${activeTab === 'projects' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'projects' ? undefined : 'none' }}
+            onClick={() => setActiveTab('projects')}
+          >
+            <FolderKanban size={14} /> Delivery Desk
+          </button>
+          <button 
+            className={`btn ${activeTab === 'billing' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'billing' ? undefined : 'none' }}
+            onClick={() => setActiveTab('billing')}
+          >
+            <ReceiptText size={14} /> Invoices & Proposals
+          </button>
+          <button 
+            className={`btn ${activeTab === 'journey' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'journey' ? undefined : 'none' }}
+            onClick={() => setActiveTab('journey')}
+          >
+            <PackageCheck size={14} /> Client Journey
+          </button>
+          <button 
+            className={`btn ${activeTab === 'services' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'services' ? undefined : 'none' }}
+            onClick={() => setActiveTab('services')}
+          >
+            <Sparkles size={14} /> Services
           </button>
           <button 
             className={`btn ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ padding: '7px 11px', fontSize: '12px', border: activeTab === 'settings' ? undefined : 'none' }}
             onClick={() => setActiveTab('settings')}
           >
-            <SettingsIcon size={16} /> Hosting & API Settings
+            <SettingsIcon size={14} /> Settings
           </button>
         </div>
       </header>
@@ -1562,8 +1734,51 @@ export default function App() {
             </button>
           </form>
         </div>
+      ) : activeTab === 'pipeline' ? (
+        <PipelineView 
+          records={crmRecords} 
+          onUpdateRecord={handleUpdateCRMRecord} 
+          onCreateRecord={handleCreateCRMRecord} 
+          onDeleteRecord={handleDeleteCRMRecord}
+        />
+      ) : activeTab === 'clients' ? (
+        <ClientsView 
+          records={crmRecords} 
+          onCreateRecord={handleCreateCRMRecord} 
+          onUpdateRecord={handleUpdateCRMRecord}
+          onDeleteRecord={handleDeleteCRMRecord}
+        />
+      ) : activeTab === 'projects' ? (
+        <ProjectsView 
+          records={crmRecords} 
+          onCreateRecord={handleCreateCRMRecord} 
+          onUpdateRecord={handleUpdateCRMRecord}
+          onDeleteRecord={handleDeleteCRMRecord}
+        />
+      ) : activeTab === 'billing' ? (
+        <BillingView 
+          records={crmRecords} 
+          services={crmServices}
+          onCreateRecord={handleCreateCRMRecord} 
+          onUpdateRecord={handleUpdateCRMRecord}
+          onDeleteRecord={handleDeleteCRMRecord}
+        />
+      ) : activeTab === 'journey' ? (
+        <JourneyView 
+          records={crmRecords} 
+          onUpdateRecord={handleUpdateCRMRecord}
+          onCreateRecord={handleCreateCRMRecord}
+        />
+      ) : activeTab === 'services' ? (
+        <ServicesView 
+          services={crmServices}
+          onSelectService={(service: AgencyService) => {
+            setActiveTab('billing');
+            showMsg(`Selected "${service.name}" — create a proposal in Invoices & Proposals.`);
+          }}
+        />
       ) : (
-        /* Leads Dashboard Tab */
+        /* Outbound Leads & Discovery Dashboard Tab */
         <div className="dashboard-grid">
           {/* Main Dashboard Section (Left Column) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', minWidth: 0 }}>
@@ -2152,6 +2367,15 @@ export default function App() {
                               </button>
                               <button 
                                 className="btn btn-secondary" 
+                                style={{ padding: '6px 8px', fontSize: '12px', borderColor: '#a855f7', color: '#c084fc' }}
+                                onClick={() => handleConvertLeadToCRM(lead.id)}
+                                disabled={convertingLeadId === lead.id}
+                                title="Push Lead to CRM Pipeline (Client & Deal)"
+                              >
+                                {convertingLeadId === lead.id ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />}
+                              </button>
+                              <button 
+                                className="btn btn-secondary" 
                                 style={{ padding: '6px 8px', fontSize: '12px' }}
                                 onClick={() => deleteLead(lead.id)}
                                 title="Delete Lead"
@@ -2292,6 +2516,31 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                {/* 1-Click Convert & Push to CRM Pipeline Button */}
+                <button
+                  className="btn btn-secondary"
+                  style={{
+                    width: '100%',
+                    marginBottom: '16px',
+                    borderColor: '#a855f7',
+                    background: 'rgba(168, 85, 247, 0.1)',
+                    color: '#c084fc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    fontSize: '13px',
+                    padding: '8px 14px',
+                    fontWeight: 600
+                  }}
+                  onClick={() => handleConvertLeadToCRM(selectedLead.id)}
+                  disabled={convertingLeadId === selectedLead.id}
+                  title="Promote this lead to CRM Client & create Deal in Pipeline"
+                >
+                  {convertingLeadId === selectedLead.id ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                  Push Lead to CRM Pipeline
+                </button>
 
                 {/* Right Drawer Tab Switcher: Demo Website vs Cold Email vs WhatsApp */}
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
