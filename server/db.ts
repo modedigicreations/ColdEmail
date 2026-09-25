@@ -302,6 +302,8 @@ class Database {
         };
         this.data.leads.push(lead);
         added.push(lead);
+        // Automatic pipeline deal creation in Stage 1: Discovery & Lead
+        this.syncLeadToPipeline(lead);
       }
     }
     this.save();
@@ -312,6 +314,8 @@ class Database {
     const lead = this.getLead(id);
     if (lead) {
       Object.assign(lead, updates);
+      // Automatically keep Pipeline Deal synchronized with changes (site deployed, outreach sent, etc.)
+      this.syncLeadToPipeline(lead);
       this.save();
     }
     return lead;
@@ -320,7 +324,14 @@ class Database {
   deleteLead(id: string): boolean {
     const index = this.data.leads.findIndex(l => l.id === id);
     if (index !== -1) {
+      const lead = this.data.leads[index];
       this.data.leads.splice(index, 1);
+      // Clean up linked pipeline deal if still in discovery
+      if (this.data.crmRecords) {
+        this.data.crmRecords = this.data.crmRecords.filter(r => 
+          !(r.type === 'lead' && (r.id === `deal-${lead.id}` || r.payload?.leadId === lead.id) && r.status === 'discovery')
+        );
+      }
       this.save();
       return true;
     }
@@ -334,6 +345,7 @@ class Database {
 
   syncLeads(leads: Lead[]): void {
     this.data.leads = leads;
+    this.syncAllLeadsToPipeline();
     this.save();
   }
 
@@ -349,6 +361,307 @@ class Database {
     };
     this.save();
     return this.data.settings;
+  }
+
+  // --- Automatic Pipeline & End-to-End Delivery Methods ---
+
+  syncLeadToPipeline(lead: Lead): CRMRecord {
+    if (!this.data.crmRecords) this.data.crmRecords = [];
+    const now = new Date().toISOString();
+    const dealId = `deal-${lead.id}`;
+    const clientId = `client-${lead.id}`;
+
+    let deal = this.data.crmRecords.find(r => 
+      r.type === 'lead' && (r.id === dealId || r.payload?.leadId === lead.id || r.payload?.outboundLeadId === lead.id)
+    );
+
+    const isContacted = lead.status === 'sent' || lead.whatsappStatus === 'contacted';
+    const hasSite = !!lead.demoSiteUrl;
+
+    if (!deal) {
+      // Create new deal starting in Stage 1: Discovery & Lead (or Stage 2 if already contacted)
+      const stage = isContacted ? 'proposal' : 'discovery';
+      const probability = isContacted ? 60 : (hasSite ? 45 : 30);
+
+      deal = {
+        id: dealId,
+        type: 'lead',
+        name: `${lead.name} — Web Redesign & Growth`,
+        clientId: clientId,
+        status: stage,
+        value: 220000, // £2,200 standard deal
+        payload: {
+          leadId: lead.id,
+          outboundLeadId: lead.id,
+          stage,
+          category: lead.category || 'Local Business',
+          website: lead.website || '',
+          contactEmail: lead.email || '',
+          contactPhone: lead.whatsapp || lead.phone || '',
+          seoScore: lead.seoScore,
+          demoSiteUrl: lead.demoSiteUrl || '',
+          subdomain: lead.subdomain || '',
+          probability,
+          expectedClose: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+          notes: lead.demoSiteUrl 
+            ? `AI Concept site ready: ${lead.demoSiteUrl}` 
+            : `Identified via Outbound Discovery Engine (${lead.category || 'Local Business'}).`,
+          source: 'Outbound Discovery Engine',
+          outreachStatus: lead.status,
+          whatsappStatus: lead.whatsappStatus || 'not_contacted',
+          sentAt: lead.sentAt
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.crmRecords.unshift(deal);
+    } else {
+      // Auto-advance or keep in sync with outreach activities:
+      let nextStage = deal.status;
+      let nextProb = deal.payload?.probability || 30;
+
+      // Automatically advance to Stage 2: Proposal Sent if outreach sent
+      if (deal.status === 'discovery' && isContacted) {
+        nextStage = 'proposal';
+        nextProb = 60;
+      }
+
+      deal.status = nextStage;
+      deal.payload = {
+        ...deal.payload,
+        leadId: lead.id,
+        stage: nextStage,
+        category: lead.category || deal.payload?.category,
+        website: lead.website || deal.payload?.website,
+        contactEmail: lead.email || deal.payload?.contactEmail,
+        contactPhone: lead.whatsapp || lead.phone || deal.payload?.contactPhone,
+        seoScore: lead.seoScore !== undefined ? lead.seoScore : deal.payload?.seoScore,
+        demoSiteUrl: lead.demoSiteUrl || deal.payload?.demoSiteUrl,
+        subdomain: lead.subdomain || deal.payload?.subdomain,
+        probability: nextProb,
+        outreachStatus: lead.status,
+        whatsappStatus: lead.whatsappStatus || deal.payload?.whatsappStatus || 'not_contacted',
+        sentAt: lead.sentAt || deal.payload?.sentAt,
+        notes: isContacted 
+          ? (deal.payload?.notes || `Pitch proposal sent. Live demo: ${lead.demoSiteUrl || 'Deployed'}`)
+          : (lead.demoSiteUrl ? `Demo site ready: ${lead.demoSiteUrl}` : deal.payload?.notes)
+      };
+      deal.updatedAt = now;
+    }
+
+    return deal;
+  }
+
+  syncAllLeadsToPipeline(): { totalLeads: number; dealsCount: number } {
+    const leads = this.getLeads();
+    for (const lead of leads) {
+      this.syncLeadToPipeline(lead);
+    }
+    this.save();
+    const deals = this.getCRMRecords('lead');
+    return { totalLeads: leads.length, dealsCount: deals.length };
+  }
+
+  winDeal(dealId: string): { 
+    deal: CRMRecord; 
+    client: CRMRecord; 
+    project: CRMRecord; 
+    tasks: CRMRecord[]; 
+    invoice: CRMRecord; 
+    proposal: CRMRecord; 
+  } | undefined {
+    if (!this.data.crmRecords) this.data.crmRecords = [];
+    const deal = this.data.crmRecords.find(r => r.type === 'lead' && r.id === dealId);
+    if (!deal) return undefined;
+
+    const now = new Date().toISOString();
+    const rawName = deal.name.replace(/\s*—.*$/, '').replace(/\s*\(.*\)$/, '').trim();
+    const clientName = rawName || 'Agency Client';
+    const clientId = deal.clientId || `client-${deal.id.replace('deal-', '')}`;
+    const dealValue = deal.value || 220000;
+
+    // 1. Mark deal as Closed / Won (Stage 4)
+    deal.status = 'won';
+    deal.payload = {
+      ...deal.payload,
+      stage: 'won',
+      probability: 100,
+      wonAt: now
+    };
+    deal.updatedAt = now;
+
+    // 2. Auto-Create or Activate Client
+    let client = this.data.crmRecords.find(r => r.type === 'client' && (r.id === clientId || r.name.toLowerCase() === clientName.toLowerCase()));
+    if (!client) {
+      client = {
+        id: clientId,
+        type: 'client',
+        name: clientName,
+        clientId: null,
+        status: 'active',
+        value: dealValue,
+        payload: {
+          email: deal.payload?.contactEmail || '',
+          phone: deal.payload?.contactPhone || '',
+          website: deal.payload?.website || '',
+          category: deal.payload?.category || 'Design & Digital Retainer',
+          demoSiteUrl: deal.payload?.demoSiteUrl || '',
+          dealId: deal.id,
+          source: 'Pipeline Closed Won'
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.crmRecords.unshift(client);
+    } else {
+      client.status = 'active';
+      client.value = Math.max(client.value || 0, dealValue);
+      client.payload = {
+        ...client.payload,
+        email: deal.payload?.contactEmail || client.payload?.email,
+        phone: deal.payload?.contactPhone || client.payload?.phone,
+        website: deal.payload?.website || client.payload?.website,
+        demoSiteUrl: deal.payload?.demoSiteUrl || client.payload?.demoSiteUrl,
+        dealId: deal.id
+      };
+      client.updatedAt = now;
+    }
+    deal.clientId = client.id;
+
+    // 3. Auto-Create Project in Delivery Desk
+    const projectId = `proj-${deal.id.replace('deal-', '')}`;
+    let project = this.data.crmRecords.find(r => r.type === 'project' && (r.id === projectId || r.payload?.dealId === deal.id));
+    if (!project) {
+      project = {
+        id: projectId,
+        type: 'project',
+        name: `${client.name} — Web Platform & Growth`,
+        clientId: client.id,
+        status: 'in-progress',
+        value: dealValue,
+        payload: {
+          dealId: deal.id,
+          scope: 'Full responsive website redesign, custom UX build, SEO launch, and care plan setup.',
+          demoSiteUrl: deal.payload?.demoSiteUrl || '',
+          targetDate: new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10),
+          progress: 15
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.crmRecords.unshift(project);
+    }
+
+    // 4. Auto-Generate 5 Standard Agency Delivery Tasks
+    const standardTasks = [
+      { name: '1. Client Onboarding & Brand Asset Intake (Logos, DNS, Content)', dueDays: 3, priority: 'high' },
+      { name: '2. Wireframe & High-Fidelity UI Layout Review', dueDays: 7, priority: 'medium' },
+      { name: '3. Responsive Production Build & Interactive Booking/Forms', dueDays: 14, priority: 'high' },
+      { name: '4. Client Staging Walkthrough & Revision Sign-off', dueDays: 17, priority: 'medium' },
+      { name: '5. Live Production Domain Launch & Care Plan Retainer Handover', dueDays: 21, priority: 'high' }
+    ];
+
+    const tasks: CRMRecord[] = [];
+    for (const tDef of standardTasks) {
+      const existingTask = this.data.crmRecords.find(r => r.type === 'task' && r.payload?.projectId === project.id && r.name === tDef.name);
+      if (!existingTask) {
+        const task: CRMRecord = {
+          id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'task',
+          name: tDef.name,
+          clientId: client.id,
+          status: 'in-progress',
+          value: 0,
+          payload: {
+            projectId: project.id,
+            priority: tDef.priority,
+            due: new Date(Date.now() + tDef.dueDays * 86400000).toISOString().slice(0, 10),
+            owner: 'Lead Developer'
+          },
+          createdAt: now,
+          updatedAt: now
+        };
+        this.data.crmRecords.unshift(task);
+        tasks.push(task);
+      }
+    }
+
+    // 5. Auto-Generate 50% Milestone Deposit Invoice
+    const depositValue = Math.round(dealValue * 0.5);
+    const invId = `inv-${deal.id.replace('deal-', '')}`;
+    let invoice = this.data.crmRecords.find(r => r.type === 'invoice' && (r.id === invId || r.payload?.dealId === deal.id));
+    if (!invoice) {
+      const invNum = Math.floor(1000 + Math.random() * 9000);
+      invoice = {
+        id: invId,
+        type: 'invoice',
+        name: `INV-${new Date().getFullYear()}-${invNum} — ${client.name} Deposit`,
+        clientId: client.id,
+        status: 'open',
+        value: depositValue,
+        payload: {
+          projectId: project.id,
+          dealId: deal.id,
+          paid: 0,
+          dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+          lineItems: [
+            { description: 'Bespoke Digital Experience (50% Milestone Deposit)', quantity: 1, rate: depositValue }
+          ]
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.crmRecords.unshift(invoice);
+    }
+
+    // 6. Auto-Generate Accepted Proposal
+    const propId = `prop-${deal.id.replace('deal-', '')}`;
+    let proposal = this.data.crmRecords.find(r => r.type === 'proposal' && (r.id === propId || r.payload?.dealId === deal.id));
+    if (!proposal) {
+      proposal = {
+        id: propId,
+        type: 'proposal',
+        name: `PROP-${new Date().getFullYear()} — ${client.name} Scoped Agreement`,
+        clientId: client.id,
+        status: 'accepted',
+        value: dealValue,
+        payload: {
+          dealId: deal.id,
+          projectId: project.id,
+          acceptedAt: now,
+          lineItems: [
+            { description: 'Business Website & SEO System', quantity: 1, rate: dealValue }
+          ]
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+      this.data.crmRecords.unshift(proposal);
+    }
+
+    // 7. Auto-Initialize Client Journey Onboarding
+    const onboardingId = `onboard-${deal.id.replace('deal-', '')}`;
+    const existingOnboarding = this.data.crmRecords.find(r => r.type === 'onboarding' && (r.id === onboardingId || r.payload?.dealId === deal.id));
+    if (!existingOnboarding) {
+      this.data.crmRecords.unshift({
+        id: onboardingId,
+        type: 'onboarding',
+        name: `${client.name} Onboarding Checklist`,
+        clientId: client.id,
+        status: 'complete',
+        value: 0,
+        payload: {
+          dealId: deal.id,
+          projectId: project.id,
+          notes: 'Won via Pipeline. Discovery & proposal completed.'
+        },
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+
+    this.save();
+    return { deal, client, project, tasks, invoice, proposal };
   }
 
   // --- CRM & Pipeline Methods ---
@@ -390,6 +703,15 @@ class Database {
     if (index === -1) return undefined;
 
     const existing = this.data.crmRecords[index];
+
+    // If deal is moved to 'won', automatically execute end-to-end downstream provisioning!
+    if (existing.type === 'lead' && (updates.status === 'won' || updates.payload?.stage === 'won')) {
+      const wonResult = this.winDeal(id);
+      if (wonResult) {
+        return wonResult.deal;
+      }
+    }
+
     const mergedPayload = updates.payload 
       ? { ...existing.payload, ...updates.payload }
       : existing.payload;
@@ -451,32 +773,9 @@ class Database {
       this.data.crmRecords.unshift(client);
     }
 
-    // 2. Create Sales Pipeline Deal
-    const dealId = `deal-${lead.id}`;
-    let deal = this.data.crmRecords.find(r => r.type === 'lead' && r.id === dealId);
-    if (!deal) {
-      deal = {
-        id: dealId,
-        type: 'lead',
-        name: `${lead.name} — Web Redesign & SEO`,
-        clientId: client.id,
-        status: lead.status === 'sent' ? 'proposal' : 'discovery',
-        value: 220000,
-        payload: {
-          stage: lead.status === 'sent' ? 'proposal' : 'discovery',
-          demoSiteUrl: lead.demoSiteUrl || '',
-          contactEmail: lead.email || '',
-          contactPhone: lead.whatsapp || lead.phone || '',
-          outboundLeadId: lead.id,
-          probability: lead.status === 'sent' ? 70 : 40,
-          expectedClose: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
-          notes: `Converted from Outbound Engine. Live concept demo available at ${lead.demoSiteUrl || 'Pending'}`,
-        },
-        createdAt: now,
-        updatedAt: now
-      };
-      this.data.crmRecords.unshift(deal);
-    }
+    // 2. Create or sync Sales Pipeline Deal
+    const deal = this.syncLeadToPipeline(lead);
+    deal.clientId = client.id;
 
     this.save();
     return { client, deal };

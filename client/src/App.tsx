@@ -266,6 +266,7 @@ export default function App() {
         }
       }
       setLeads(data);
+      fetchCRMData();
     } catch (e) {
       console.error(e);
       const localLeadsStr = localStorage.getItem('coldreach_leads');
@@ -381,6 +382,50 @@ export default function App() {
       showMsg(`Conversion error: ${err.message}`, 'error');
     } finally {
       setConvertingLeadId(null);
+    }
+  };
+
+  const handleWinDeal = async (dealId: string) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(`${API_BASE}/crm/deals/${dealId}/win`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showMsg(data.message || '🎉 Deal Closed Won! Client, Project, Tasks & Deposit Invoice auto-provisioned!');
+        if (Array.isArray(data.records)) {
+          setCrmRecords(data.records);
+        } else {
+          await fetchCRMData();
+        }
+      } else {
+        showMsg(data.error || 'Failed to win deal', 'error');
+      }
+    } catch (err: any) {
+      showMsg(`Error closing deal: ${err.message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSyncPipeline = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch(`${API_BASE}/crm/pipeline/sync-all`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showMsg(data.message || 'Pipeline synchronized with outbound discovery leads!');
+        if (Array.isArray(data.records)) {
+          setCrmRecords(data.records);
+        } else {
+          await fetchCRMData();
+        }
+      } else {
+        showMsg(data.error || 'Failed to sync pipeline', 'error');
+      }
+    } catch (err: any) {
+      showMsg(`Sync error: ${err.message}`, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1743,6 +1788,9 @@ export default function App() {
           onUpdateRecord={handleUpdateCRMRecord} 
           onCreateRecord={handleCreateCRMRecord} 
           onDeleteRecord={handleDeleteCRMRecord}
+          onNavigateToTab={(tab: string) => setActiveTab(tab as any)}
+          onSyncPipeline={handleSyncPipeline}
+          onWinDeal={handleWinDeal}
         />
       ) : activeTab === 'clients' ? (
         <ClientsView 

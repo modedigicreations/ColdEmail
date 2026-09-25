@@ -1079,6 +1079,48 @@ app.post('/api/crm/convert-lead/:id', (req, res) => {
   }
 });
 
+// Automatic Pipeline Reconciliation: Synchronize all outbound leads into Pipeline
+app.post('/api/crm/pipeline/sync-all', (_req, res) => {
+  try {
+    const result = db.syncAllLeadsToPipeline();
+    const records = db.getCRMRecords();
+    res.json({
+      success: true,
+      message: `Synchronized ${result.totalLeads} discovery leads with sales pipeline (${result.dealsCount} deals total).`,
+      ...result,
+      records
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Automatic Pipeline End-to-End Deal Win: Win deal & auto-provision Client, Project, Sprint Tasks, Deposit Invoice, and Journey
+app.post('/api/crm/deals/:id/win', (req, res) => {
+  try {
+    const result = db.winDeal(req.params.id);
+    if (!result) {
+      return res.status(404).json({ error: 'Sales deal not found in pipeline' });
+    }
+    res.json({
+      success: true,
+      message: `🎉 Deal Closed & Won! Auto-provisioned Client "${result.client.name}", Project "${result.project.name}", 5 Delivery Sprint Tasks, 50% Milestone Deposit Invoice, and Journey Milestones!`,
+      ...result,
+      records: db.getCRMRecords()
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Synchronize all existing leads into pipeline on server initialization
+try {
+  const initSync = db.syncAllLeadsToPipeline();
+  console.log(`[Pipeline Engine] Initialized: ${initSync.dealsCount} pipeline deals active across ${initSync.totalLeads} leads.`);
+} catch (syncErr: any) {
+  console.warn('[Pipeline Engine] Initial sync warning:', syncErr.message);
+}
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
