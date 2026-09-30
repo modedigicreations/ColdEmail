@@ -190,7 +190,11 @@ Conclude the email using the provided contact details and email signature. Do no
       throw new Error('Anthropic API key is not configured. Please set it in Settings.');
     }
 
-    const anthropic = new Anthropic({ apiKey });
+    const workspaceId = settings.anthropicWorkspaceId?.trim();
+    const anthropic = new Anthropic({ 
+      apiKey,
+      defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
+    });
     const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
     const candidateModels = Array.from(new Set([
       requestedModel,
@@ -223,7 +227,14 @@ Conclude the email using the provided contact details and email signature. Do no
       }
     }
 
-    throw lastError || new Error('Unexpected response format from Anthropic API');
+    if (lastError) {
+      const errMsg = lastError.message || String(lastError);
+      if (errMsg.includes('anthropic-workspace-id') || errMsg.includes('scoped to a workspace')) {
+        throw new Error('Anthropic Workspace Error: Your API key is an Organization key that requires a Workspace ID. Please enter your Anthropic Workspace ID in Settings (Settings > AI Engines > Anthropic Workspace ID, e.g. wrkspc_...), or create a Workspace-scoped key in console.anthropic.com/settings/workspaces.');
+      }
+      throw lastError;
+    }
+    throw new Error('Unexpected response format from Anthropic API');
   }
 }
 
@@ -364,7 +375,11 @@ CRITICAL RULES:
         return generateFallbackWhatsAppPitch(lead.name, cleanDemoUrl, lead.category);
       }
 
-      const anthropic = new Anthropic({ apiKey });
+      const workspaceId = settings.anthropicWorkspaceId?.trim();
+      const anthropic = new Anthropic({ 
+        apiKey,
+        defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
+      });
       const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
       const candidateModels = Array.from(new Set([
         requestedModel,

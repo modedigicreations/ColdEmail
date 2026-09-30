@@ -31,6 +31,14 @@ app.use(express.json());
 app.use('/debug', express.static(path.join(__dirname, 'debug')));
 app.use('/sites', express.static(getSitesDir()));
 
+export function cleanAiErrorMessage(error: any): string {
+  const msg = error?.message || String(error);
+  if (msg.includes('anthropic-workspace-id') || msg.includes('scoped to a workspace')) {
+    return 'Anthropic Workspace Error: Your API key is an Organization-level key that requires a Workspace ID. Please enter your Anthropic Workspace ID in Settings (Settings > AI Engines > Anthropic Workspace ID, e.g. wrkspc_...), or create a Workspace-scoped key directly in console.anthropic.com/settings/workspaces.';
+  }
+  return msg;
+}
+
 // Virtual Host middleware for custom subdomains (e.g. lead-subdomain.demo.domain.com or lead-subdomain.localhost)
 app.use((req, res, next) => {
   // Pass API requests, static sites, and debug requests to normal routes
@@ -439,8 +447,9 @@ app.post('/api/leads/:id/draft-whatsapp', async (req, res) => {
 
     res.json(updated);
   } catch (error: any) {
-    db.updateLead(req.params.id, { error: error.message });
-    res.status(500).json({ error: error.message });
+    const cleanErr = cleanAiErrorMessage(error);
+    db.updateLead(req.params.id, { error: cleanErr });
+    res.status(500).json({ error: cleanErr });
   }
 });
 
@@ -469,8 +478,9 @@ app.post('/api/leads/:id/draft', async (req, res) => {
 
     res.json(updated);
   } catch (error: any) {
-    db.updateLead(req.params.id, { status: 'failed', error: error.message });
-    res.status(500).json({ error: error.message });
+    const cleanErr = cleanAiErrorMessage(error);
+    db.updateLead(req.params.id, { status: 'failed', error: cleanErr });
+    res.status(500).json({ error: cleanErr });
   }
 });
 
@@ -854,7 +864,11 @@ app.post('/api/settings/test-ai', async (req, res) => {
       });
     } else {
       // Claude (Anthropic)
-      const anthropic = new Anthropic({ apiKey: apiKey.trim() });
+      const workspaceId = (req.body?.anthropicWorkspaceId || db.getSettings().anthropicWorkspaceId || '').trim();
+      const anthropic = new Anthropic({ 
+        apiKey: apiKey.trim(),
+        defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
+      });
       const requestedModel = model || 'claude-3-7-sonnet-20250219';
       const candidateModels = Array.from(new Set([
         requestedModel,
@@ -885,20 +899,20 @@ app.post('/api/settings/test-ai', async (req, res) => {
       if (lastErr) {
         return res.status(400).json({
           success: false,
-          error: `Anthropic Claude Error: ${lastErr.message}`
+          error: cleanAiErrorMessage(lastErr)
         });
       }
 
       return res.json({ 
         success: true, 
-        message: `Anthropic Claude connected successfully! Active model: "${connectedModel}"`,
+        message: `Anthropic Claude connected successfully! Active model: "${connectedModel}"${workspaceId ? ` (Workspace: ${workspaceId})` : ''}`,
         verifiedModel: connectedModel
       });
     }
   } catch (error: any) {
     return res.status(500).json({ 
       success: false, 
-      error: error.response?.data?.error?.message || error.message 
+      error: cleanAiErrorMessage(error) 
     });
   }
 });

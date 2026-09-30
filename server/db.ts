@@ -34,6 +34,7 @@ export interface Settings {
   aiProvider: 'claude' | 'deepseek' | 'gemini' | 'openai';
   anthropicApiKey: string;
   anthropicModel?: string;
+  anthropicWorkspaceId?: string;
   deepseekApiKey: string;
   deepseekModel?: string;
   geminiApiKey?: string;
@@ -326,6 +327,7 @@ const DEFAULT_SETTINGS: Settings = {
   aiProvider: 'gemini',
   anthropicApiKey: '',
   anthropicModel: 'claude-3-7-sonnet-20250219',
+  anthropicWorkspaceId: '',
   deepseekApiKey: '',
   deepseekModel: 'deepseek-chat',
   geminiApiKey: '',

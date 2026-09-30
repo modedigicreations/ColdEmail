@@ -55,6 +55,7 @@ interface Settings {
   aiProvider: 'claude' | 'deepseek' | 'gemini' | 'openai';
   anthropicApiKey: string;
   anthropicModel?: string;
+  anthropicWorkspaceId?: string;
   deepseekApiKey: string;
   deepseekModel?: string;
   geminiApiKey?: string;
@@ -117,6 +118,7 @@ export default function App() {
     aiProvider: 'gemini',
     anthropicApiKey: '',
     anthropicModel: 'claude-3-7-sonnet-20250219',
+    anthropicWorkspaceId: '',
     deepseekApiKey: '',
     deepseekModel: 'deepseek-chat',
     geminiApiKey: '',
@@ -539,7 +541,8 @@ export default function App() {
         body: JSON.stringify({
           provider: settings.aiProvider,
           apiKey,
-          model
+          model,
+          anthropicWorkspaceId: settings.anthropicWorkspaceId
         })
       });
       const data = await res.json();
@@ -1589,6 +1592,30 @@ export default function App() {
                       <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Ultra Fast & Lightweight)</option>
                       <option value="claude-3-opus-20240229">Claude 3 Opus (Deep Reasoning & Writing)</option>
                     </select>
+                  </div>
+                  <div className="form-group" style={{ maxWidth: '480px', marginTop: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Anthropic Workspace ID <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Required for Org-scoped Keys)</span></span>
+                      <a 
+                        href="https://console.anthropic.com/settings/workspaces" 
+                        target="_blank" 
+                        rel="noreferrer"
+                        style={{ fontSize: '11px', color: 'var(--primary)', textDecoration: 'none' }}
+                      >
+                        Find in Console ↗
+                      </a>
+                    </label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      value={settings.anthropicWorkspaceId || ''}
+                      onChange={e => setSettings({ ...settings, anthropicWorkspaceId: e.target.value.trim() })}
+                      placeholder="e.g. wrkspc_01ABC123..."
+                      style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                    />
+                    <small style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                      If your API key is scoped to an organization rather than a workspace, provide your Workspace ID above. Alternatively, create an API key directly inside a specific workspace.
+                    </small>
                   </div>
                 </div>
               )}
@@ -2848,8 +2875,20 @@ export default function App() {
                     gap: '8px' 
                   }}>
                     <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <strong>Action Error:</strong> {selectedLead.error}
+                      {(selectedLead.error?.includes('Workspace') || selectedLead.error?.includes('anthropic-workspace-id')) && (
+                        <div style={{ marginTop: '8px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => { setSelectedLeadId(null); setActiveTab('settings'); }}
+                            style={{ fontSize: '11px', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.25)', borderColor: 'rgba(239, 68, 68, 0.5)', color: '#fff' }}
+                          >
+                            ⚙️ Open Settings & Set Anthropic Workspace ID →
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3080,8 +3119,20 @@ export default function App() {
                       {selectedLead.status === 'failed' && selectedLead.error && (
                         <div style={{ marginTop: '16px', padding: '10px', background: 'var(--danger-bg)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', fontSize: '12px', display: 'flex', gap: '8px', color: '#fca5a5' }}>
                           <XCircle size={16} style={{ flexShrink: 0 }} />
-                          <div>
+                          <div style={{ flex: 1 }}>
                             <strong>Action Failed:</strong> {selectedLead.error}
+                            {(selectedLead.error?.includes('Workspace') || selectedLead.error?.includes('anthropic-workspace-id')) && (
+                              <div style={{ marginTop: '8px' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  onClick={() => { setSelectedLeadId(null); setActiveTab('settings'); }}
+                                  style={{ fontSize: '11px', padding: '4px 10px', background: 'rgba(239, 68, 68, 0.25)', borderColor: 'rgba(239, 68, 68, 0.5)', color: '#fff' }}
+                                >
+                                  ⚙️ Open Settings & Set Anthropic Workspace ID →
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

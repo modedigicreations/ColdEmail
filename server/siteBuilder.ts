@@ -421,7 +421,11 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     }
 
     try {
-      const anthropic = new Anthropic({ apiKey });
+      const workspaceId = settings.anthropicWorkspaceId?.trim();
+      const anthropic = new Anthropic({ 
+        apiKey,
+        defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
+      });
       const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
       const candidateModels = Array.from(new Set([
         requestedModel,
