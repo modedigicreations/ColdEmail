@@ -465,7 +465,16 @@ export default function App() {
       const data = await res.json();
       
       // Restore settings to backend if missing on startup
-      if (!data.gmailEmail && !data.anthropicApiKey && !data.deepseekApiKey && !data.resendApiKey) {
+      const hasAnyBackendKey = Boolean(
+        data.gmailEmail || 
+        data.anthropicApiKey || 
+        data.deepseekApiKey || 
+        data.openaiApiKey || 
+        data.geminiApiKey || 
+        data.resendApiKey
+      );
+
+      if (!hasAnyBackendKey) {
         const localSettingsStr = localStorage.getItem('coldreach_settings');
         if (localSettingsStr) {
           try {
@@ -476,18 +485,18 @@ export default function App() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(localSettings)
             });
-            setSettings(localSettings);
+            setSettings(prev => ({ ...prev, ...localSettings }));
             return;
           } catch {}
         }
       }
-      setSettings(data);
+      setSettings(prev => ({ ...prev, ...data }));
     } catch (e) {
       console.error(e);
       const localSettingsStr = localStorage.getItem('coldreach_settings');
       if (localSettingsStr) {
         try {
-          setSettings(JSON.parse(localSettingsStr));
+          setSettings(prev => ({ ...prev, ...JSON.parse(localSettingsStr) }));
         } catch {}
       }
     }
@@ -850,6 +859,7 @@ export default function App() {
         throw new Error(err.error || 'Website build failed');
       }
       const updated = await res.json();
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updated } : l));
       showMsg(`Website deployed to ${updated.demoSiteUrl || updated.subdomain}!`, 'success');
       fetchLeads();
       setLeadDrawerTab('website');
@@ -873,6 +883,11 @@ export default function App() {
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || 'AI draft generation failed');
+      }
+      const updated = await res.json();
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updated } : l));
+      if (selectedLeadId === id && updated?.emailDraft) {
+        setEditedBody(updated.emailDraft);
       }
       showMsg('Email draft generated with demo website link!');
       fetchLeads();

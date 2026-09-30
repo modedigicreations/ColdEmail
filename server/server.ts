@@ -15,6 +15,7 @@ import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
 import { getSitesDir } from './hosting/wildcardAdapter.js';
 import { generateWebsiteHtml } from './siteBuilder.js';
 
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -39,6 +40,20 @@ export function cleanAiErrorMessage(error: any): string {
   return msg;
 }
 
+export function resolveTemplateTokens(text: string, lead: any, demoUrl?: string): string {
+  if (!text) return '';
+  const cleanDemoUrl = (demoUrl || lead?.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
+  return text
+    .replace(/\{\{\s*Business Name\s*\}\}/gi, lead?.name || '')
+    .replace(/\{\{\s*Category\s*\}\}/gi, lead?.category || 'your business')
+    .replace(/\{\{\s*SEO Score\s*\}\}/gi, lead?.seoScore ? `${lead.seoScore}/100` : 'N/A')
+    .replace(/\{\{\s*GMB Rating\s*\}\}/gi, lead?.gmbRating ? `${lead.gmbRating}/5` : 'N/A')
+    .replace(/\*+\{\{\s*Demo Website\s*\}\}\*+/gi, cleanDemoUrl)
+    .replace(/\*+\{\{\s*demoSiteUrl\s*\}\}\*+/gi, cleanDemoUrl)
+    .replace(/\{\{\s*Demo Website\s*\}\}/gi, cleanDemoUrl)
+    .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
+}
+
 // Virtual Host middleware for custom subdomains (e.g. lead-subdomain.demo.domain.com or lead-subdomain.localhost)
 app.use((req, res, next) => {
   // Pass API requests, static sites, and debug requests to normal routes
@@ -48,7 +63,12 @@ app.use((req, res, next) => {
 
   const rawHost = (req.headers.host || '').split(':')[0].toLowerCase();
   const settings = db.getSettings();
-  const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com').replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
+  const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '')
+    .replace(/^(\*+\.?)*/, '')
+    .replace(/[*]/g, '')
+    .toLowerCase();
 
   let targetSubdomain = '';
   if (rawHost.endsWith(`.${baseDomain}`)) {
@@ -60,10 +80,24 @@ app.use((req, res, next) => {
   if (targetSubdomain && targetSubdomain !== 'www' && targetSubdomain !== 'api') {
     const leads = db.getLeads();
     const lead = leads.find(l => l.subdomain === targetSubdomain || l.id === targetSubdomain);
-    if (lead && lead.demoSiteHtml) {
+    let html = lead?.demoSiteHtml;
+    if (!html && lead?.subdomain) {
+      const diskPath = path.join(getSitesDir(), lead.subdomain, 'index.html');
+      if (fs.existsSync(diskPath)) {
+        try { html = fs.readFileSync(diskPath, 'utf-8'); } catch (_) {}
+      }
+    }
+    if (!html) {
+      const directDiskPath = path.join(getSitesDir(), targetSubdomain, 'index.html');
+      if (fs.existsSync(directDiskPath)) {
+        try { html = fs.readFileSync(directDiskPath, 'utf-8'); } catch (_) {}
+      }
+    }
+
+    if (html) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.removeHeader('X-Frame-Options');
-      return res.send(lead.demoSiteHtml);
+      return res.send(html);
     }
   }
 
@@ -338,17 +372,14 @@ app.post('/api/leads/automate-all', (req, res) => {
           if (currentLead.email) {
             console.log(`[Automation] Sending outreach email to: ${currentLead.email}`);
             const cleanDemoUrl = (currentLead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
-            const resolvedSubject = subject
-              .replace(/\{\{\s*Business Name\s*\}\}/gi, currentLead.name)
-              .replace(/\*+\{\{\s*Demo Website\s*\}\}\*+/gi, cleanDemoUrl)
-              .replace(/\*+\{\{\s*demoSiteUrl\s*\}\}\*+/gi, cleanDemoUrl)
-              .replace(/\{\{\s*Demo Website\s*\}\}/gi, cleanDemoUrl)
-              .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
+            const rawSubject = subject || `Website Redesign Demo for ${currentLead.name}`;
+            const resolvedSubject = resolveTemplateTokens(rawSubject, currentLead, cleanDemoUrl);
+            const resolvedBody = resolveTemplateTokens(draft, currentLead, cleanDemoUrl);
             
             await sendColdEmail({
               to: currentLead.email,
               subject: resolvedSubject,
-              body: draft
+              body: resolvedBody
             }, settings);
 
             db.updateLead(currentLead.id, {
@@ -509,20 +540,13 @@ app.post('/api/leads/:id/send', async (req, res) => {
 
     const cleanDemoUrl = (lead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
     const rawSubject = subject || `Website Redesign Demo for ${lead.name}`;
-    const resolvedSubject = rawSubject
-      .replace(/\{\{\s*Business Name\s*\}\}/gi, lead.name)
-      .replace(/\{\{\s*Category\s*\}\}/gi, lead.category || 'your business')
-      .replace(/\{\{\s*SEO Score\s*\}\}/gi, lead.seoScore ? `${lead.seoScore}/100` : 'N/A')
-      .replace(/\{\{\s*GMB Rating\s*\}\}/gi, lead.gmbRating ? `${lead.gmbRating}/5` : 'N/A')
-      .replace(/\*+\{\{\s*Demo Website\s*\}\}\*+/gi, cleanDemoUrl)
-      .replace(/\*+\{\{\s*demoSiteUrl\s*\}\}\*+/gi, cleanDemoUrl)
-      .replace(/\{\{\s*Demo Website\s*\}\}/gi, cleanDemoUrl)
-      .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
+    const resolvedSubject = resolveTemplateTokens(rawSubject, lead, cleanDemoUrl);
+    const resolvedBody = resolveTemplateTokens(emailBody, lead, cleanDemoUrl);
 
     await sendColdEmail({
       to: lead.email,
       subject: resolvedSubject,
-      body: emailBody
+      body: resolvedBody
     }, settings);
 
     const updated = db.updateLead(lead.id, {
@@ -676,8 +700,9 @@ app.post('/api/leads/:id/build-and-deploy', async (req, res) => {
 
     res.json(updated);
   } catch (error: any) {
-    db.updateLead(req.params.id, { siteStatus: 'failed', error: error.message });
-    res.status(500).json({ error: error.message });
+    const cleanErr = cleanAiErrorMessage(error);
+    db.updateLead(req.params.id, { siteStatus: 'failed', error: cleanErr });
+    res.status(500).json({ error: cleanErr });
   }
 });
 
@@ -691,8 +716,16 @@ app.get('/api/leads/:id/site-preview', (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Security-Policy', "frame-ancestors *");
 
-    if (lead.demoSiteHtml) {
-      return res.send(lead.demoSiteHtml);
+    let html = lead.demoSiteHtml;
+    if (!html && lead.subdomain) {
+      const sitePath = path.join(getSitesDir(), lead.subdomain, 'index.html');
+      if (fs.existsSync(sitePath)) {
+        try { html = fs.readFileSync(sitePath, 'utf-8'); } catch (_) {}
+      }
+    }
+
+    if (html) {
+      return res.send(html);
     }
 
     res.send('<!DOCTYPE html><html><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>No demo website generated for this lead yet.</h3></body></html>');
@@ -707,14 +740,28 @@ app.get('/demo/:subdomainOrId', (req, res) => {
     const param = req.params.subdomainOrId;
     const leads = db.getLeads();
     const lead = leads.find(l => l.id === param || l.subdomain === param);
-    if (!lead || !lead.demoSiteHtml) {
+    let html = lead?.demoSiteHtml;
+    if (!html && lead?.subdomain) {
+      const diskPath = path.join(getSitesDir(), lead.subdomain, 'index.html');
+      if (fs.existsSync(diskPath)) {
+        try { html = fs.readFileSync(diskPath, 'utf-8'); } catch (_) {}
+      }
+    }
+    if (!html) {
+      const directDiskPath = path.join(getSitesDir(), param, 'index.html');
+      if (fs.existsSync(directDiskPath)) {
+        try { html = fs.readFileSync(directDiskPath, 'utf-8'); } catch (_) {}
+      }
+    }
+
+    if (!html) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.status(404).send('<!DOCTYPE html><html><body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>Demo website not found or still generating.</h3></body></html>');
     }
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.removeHeader('X-Frame-Options');
-    return res.send(lead.demoSiteHtml);
+    return res.send(html);
   } catch (err: any) {
     res.status(500).send(`Demo error: ${err.message}`);
   }

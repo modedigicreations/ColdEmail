@@ -65,7 +65,7 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
         name: dealName,
         clientId: selectedClient === 'none' ? null : selectedClient,
         status: dealStage,
-        value: Math.round(Number(dealValue) * 100),
+        value: Math.round((parseFloat(String(dealValue).replace(/[^0-9.]/g, '')) || 0) * 100),
         payload: {
           stage: dealStage,
           notes,

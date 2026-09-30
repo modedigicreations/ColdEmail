@@ -54,7 +54,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         name: projectName,
         clientId: selectedClient === 'none' ? null : selectedClient,
         status: 'in-progress',
-        value: Math.round(Number(projectValue) * 100),
+        value: Math.round((parseFloat(String(projectValue).replace(/[^0-9.]/g, '')) || 0) * 100),
         payload: {
           scope: projectScope,
           targetDate: targetDate || new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10),

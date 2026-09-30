@@ -14,18 +14,20 @@ export function sanitizePhoneNumberForWhatsApp(phone?: string | null): string | 
     cleaned = cleaned.slice(1);
   }
 
-  // Handle local Nigerian numbers starting with 0 (e.g. 080, 081, 070, 090, 091, 084)
-  if (cleaned.startsWith('0') && cleaned.length >= 10 && cleaned.length <= 11) {
-    cleaned = '234' + cleaned.slice(1);
-  }
-
-  // Handle UK numbers starting with 0 (e.g. 07, 020, 01)
-  if (cleaned.startsWith('0') && (cleaned.startsWith('07') || cleaned.startsWith('02') || cleaned.startsWith('01')) && cleaned.length === 11) {
+  // 1. Handle UK numbers starting with 0 (07 mobiles, 01/02/03 landlines - 11 digits)
+  if (cleaned.startsWith('0') && (cleaned.startsWith('07') || cleaned.startsWith('02') || cleaned.startsWith('01') || cleaned.startsWith('03')) && cleaned.length === 11) {
     cleaned = '44' + cleaned.slice(1);
   }
-
-  // Handle 10-digit North American numbers without country code
-  if (cleaned.length === 10 && !cleaned.startsWith('0') && !cleaned.startsWith('1')) {
+  // 2. Handle Nigerian mobile numbers starting with 0 (080, 081, 090, 091, 070 - 11 digits)
+  else if (cleaned.startsWith('0') && (cleaned.startsWith('08') || cleaned.startsWith('09') || cleaned.startsWith('070')) && cleaned.length === 11) {
+    cleaned = '234' + cleaned.slice(1);
+  }
+  // 3. Fallback for other 11-digit numbers starting with 0 (default to UK)
+  else if (cleaned.startsWith('0') && cleaned.length === 11) {
+    cleaned = '44' + cleaned.slice(1);
+  }
+  // 4. Handle 10-digit North American numbers without country code
+  else if (cleaned.length === 10 && !cleaned.startsWith('0') && !cleaned.startsWith('1')) {
     cleaned = '1' + cleaned;
   }
 
