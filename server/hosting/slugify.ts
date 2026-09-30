@@ -1,8 +1,17 @@
+export function sanitizeSubdomain(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .toLowerCase()
+    .replace(/[*_~`]/g, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export function generateSubdomainSlug(name: string, existingSlugs: string[] = []): string {
   if (!name) return 'demo-' + Math.random().toString(36).substring(2, 7);
 
-  // Convert to lowercase and trim
-  let slug = name.toLowerCase().trim();
+  // Convert to lowercase, remove asterisks/markdown and trim
+  let slug = name.toLowerCase().replace(/[*_~`]/g, '').trim();
 
   // Replace common business suffixes
   slug = slug.replace(/\b(inc|llc|ltd|co|corp|corporation|company|limited)\b/gi, '');
@@ -29,5 +38,5 @@ export function generateSubdomainSlug(name: string, existingSlugs: string[] = []
     slug = `${slug.substring(0, 26)}-${suffix}`;
   }
 
-  return slug;
+  return sanitizeSubdomain(slug);
 }

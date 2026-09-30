@@ -7,21 +7,27 @@ export class CloudflareAdapter implements HostingAdapter {
   async createSubdomain(subdomain: string, settings: Settings): Promise<SubdomainResult> {
     const token = settings.cloudflareApiToken?.trim();
     const zoneId = settings.cloudflareZoneId?.trim();
-    const baseDomain = (settings.baseDomain || '').replace(/^https?:\/\//, '').replace(/\/$/, '').trim();
+    const cleanSub = subdomain.replace(/[*_~`]/g, '').trim();
+    const baseDomain = (settings.baseDomain || '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, '')
+      .replace(/^(\*+\.?)*/, '')
+      .replace(/[*]/g, '')
+      .trim();
 
     // Store local folder too
-    await wildcardAdapter.createSubdomain(subdomain, settings);
+    await wildcardAdapter.createSubdomain(cleanSub, settings);
 
     if (!token || !zoneId || !baseDomain) {
       console.warn('[Cloudflare Adapter] Missing API token or Zone ID. Falling back to local wildcard.');
-      return wildcardAdapter.createSubdomain(subdomain, settings);
+      return wildcardAdapter.createSubdomain(cleanSub, settings);
     }
 
     try {
       const endpoint = `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`;
       const response = await axios.post(endpoint, {
         type: 'CNAME',
-        name: `${subdomain}.${baseDomain}`,
+        name: `${cleanSub}.${baseDomain}`,
         content: baseDomain,
         ttl: 1, // Auto
         proxied: true
@@ -34,12 +40,12 @@ export class CloudflareAdapter implements HostingAdapter {
       });
 
       if (response.data.success) {
-        const fullUrl = `https://${subdomain}.${baseDomain}`;
+        const fullUrl = `https://${cleanSub}.${baseDomain}`;
         return {
           success: true,
-          subdomain,
+          subdomain: cleanSub,
           url: fullUrl,
-          message: `Cloudflare DNS record created for ${subdomain}.${baseDomain}`
+          message: `Cloudflare DNS record created for ${cleanSub}.${baseDomain}`
         };
       } else {
         const errorMsg = response.data.errors?.map((e: any) => e.message).join(', ') || 'Unknown Cloudflare error';

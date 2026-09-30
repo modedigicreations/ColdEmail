@@ -15,14 +15,26 @@ export async function sendColdEmail(params: SendEmailParams, settings: Settings)
     throw new Error(`Invalid recipient email address: "${params.to}"`);
   }
 
-  // Generate clean HTML version with clickable links without capturing trailing sentence punctuation
-  const escapedBody = params.body
+  // Clean any asterisks or formatting from URLs in both plain text and HTML
+  const cleanedBody = params.body
+    .replace(/\*+(https?:\/\/[^\s*]+?)\*+/g, '$1')
+    .replace(/(https?:\/\/[^\s*]+?)\*+/g, '$1')
+    .replace(/\*+(https?:\/\/[^\s*]+)/g, '$1');
+
+  // Generate clean HTML version with clickable links without capturing trailing sentence punctuation or asterisks
+  const escapedBody = cleanedBody
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+
   const htmlBody = escapedBody
-    .replace(/(https?:\/\/[^\s<)]+?)([\.,;:!?]?)(?=\s|$|<|\))/g, '<a href="$1" style="color: #7c3aed; font-weight: 600; text-decoration: underline;" target="_blank">$1</a>$2')
+    .replace(/(https?:\/\/[^\s<)*]+?)([\.,;:!?*]*)(?=\s|$|<|\))/g, (_match, rawUrl, punct) => {
+      const cleanUrl = rawUrl.replace(/[*_~`]+$/, '').replace(/^[*_~`]+/, '');
+      const cleanPunct = (punct || '').replace(/[*_~`]/g, '');
+      return `<a href="${cleanUrl}" style="color: #7c3aed; font-weight: 600; text-decoration: underline;" target="_blank">${cleanUrl}</a>${cleanPunct}`;
+    })
     .replace(/\n/g, '<br>');
+
   const wrappedHtml = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;">${htmlBody}</div>`;
 
   if (provider === 'resend') {
@@ -44,7 +56,7 @@ export async function sendColdEmail(params: SendEmailParams, settings: Settings)
           from: fromEmail,
           to: [recipient],
           subject: params.subject,
-          text: params.body,
+          text: cleanedBody,
           html: wrappedHtml
         })
       });
@@ -88,7 +100,7 @@ export async function sendColdEmail(params: SendEmailParams, settings: Settings)
     from: userEmail,
     to: recipient,
     subject: params.subject,
-    text: params.body,
+    text: cleanedBody,
     html: wrappedHtml
   };
 

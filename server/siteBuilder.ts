@@ -250,7 +250,12 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
 
 export async function generateWebsiteHtml(lead: Lead, settings: Settings): Promise<string> {
   const provider = settings.aiProvider || 'claude';
-  const baseDomain = settings.baseDomain || 'demo.modedigicreations.com';
+  const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '')
+    .replace(/^(\*+\.?)*/, '')
+    .replace(/[*]/g, '')
+    .trim();
 
   const leadContext = `
 Business Name: ${lead.name}
@@ -287,13 +292,16 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     try {
       const cleanKey = apiKey.trim();
       const genAI = new GoogleGenerativeAI(cleanKey);
-      const requestedModel = settings.geminiModel || 'gemini-3.8-flash';
+      const requestedModel = settings.geminiModel || 'gemini-2.5-flash';
       const candidateModels = Array.from(new Set([
         requestedModel,
-        'gemini-3.8-flash',
-        'gemini-3.6-flash',
         'gemini-2.5-flash',
-        'gemini-1.5-flash'
+        'gemini-2.5-pro',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-3.8-flash',
+        'gemini-3.6-flash'
       ]));
 
       for (const mName of candidateModels) {
@@ -331,16 +339,29 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     }
 
     try {
-      const modelName = settings.openaiModel || 'gpt-4o-mini';
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      const modelName = settings.openaiModel || 'gpt-4o';
+      const isReasoning = modelName.startsWith('o1') || modelName.startsWith('o3');
+
+      const messages: any[] = isReasoning
+        ? [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }]
+        : [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ];
+
+      const payload: any = {
         model: modelName,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: 4096,
-        temperature: 0.7
-      }, {
+        messages
+      };
+
+      if (isReasoning) {
+        payload.max_completion_tokens = 4096;
+      } else {
+        payload.max_tokens = 4096;
+        payload.temperature = 0.7;
+      }
+
+      const response = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
         headers: {
           'Authorization': `Bearer ${apiKey.trim()}`,
           'Content-Type': 'application/json'
@@ -364,14 +385,17 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
     }
 
     try {
+      const modelName = settings.deepseekModel || 'deepseek-chat';
+      const isReasoner = modelName === 'deepseek-reasoner';
+
       const response = await axios.post('https://api.deepseek.com/chat/completions', {
-        model: 'deepseek-chat',
+        model: modelName,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
         max_tokens: 3500,
-        temperature: 0.7
+        ...(isReasoner ? {} : { temperature: 0.7 })
       }, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -398,19 +422,34 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
 
     try {
       const anthropic = new Anthropic({ apiKey });
-      const message = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 3500,
-        temperature: 0.7,
-        system: systemPrompt,
-        messages: [
-          { role: 'user', content: userPrompt }
-        ]
-      });
+      const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
+      const candidateModels = Array.from(new Set([
+        requestedModel,
+        'claude-3-7-sonnet-20250219',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+        'claude-3-opus-20240229'
+      ]));
 
-      const content = message.content[0];
-      if (content.type === 'text') {
-        return sanitizeHtmlOutput(content.text);
+      for (const mName of candidateModels) {
+        try {
+          const message = await anthropic.messages.create({
+            model: mName,
+            max_tokens: 3500,
+            temperature: 0.7,
+            system: systemPrompt,
+            messages: [
+              { role: 'user', content: userPrompt }
+            ]
+          });
+
+          const content = message.content[0];
+          if (content.type === 'text') {
+            return sanitizeHtmlOutput(content.text);
+          }
+        } catch (mErr: any) {
+          console.warn(`[Website Builder] Claude model ${mName} attempt failed: ${mErr.message}. Trying next candidate...`);
+        }
       }
       return generateFallbackTemplate(lead, baseDomain);
     } catch (err: any) {

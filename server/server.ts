@@ -124,7 +124,12 @@ app.post('/api/leads/upload', upload.single('file'), (req, res) => {
     const csvContent = req.file.buffer.toString('utf-8');
     const parsedLeads = parseLeadsCSV(csvContent);
     const added = db.addLeads(parsedLeads);
-    res.json({ success: true, count: added.length, total: parsedLeads.length });
+    res.json({ 
+      success: true, 
+      count: added.length, 
+      total: parsedLeads.length,
+      skipped: parsedLeads.length - added.length
+    });
   } catch (error: any) {
     console.error('CSV upload failed:', error);
     res.status(500).json({ error: error.message });
@@ -324,10 +329,13 @@ app.post('/api/leads/automate-all', (req, res) => {
           currentLead = db.getLead(currentLead.id)!;
           if (currentLead.email) {
             console.log(`[Automation] Sending outreach email to: ${currentLead.email}`);
+            const cleanDemoUrl = (currentLead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
             const resolvedSubject = subject
               .replace(/\{\{\s*Business Name\s*\}\}/gi, currentLead.name)
-              .replace(/\{\{\s*Demo Website\s*\}\}/gi, currentLead.demoSiteUrl || '')
-              .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, currentLead.demoSiteUrl || '');
+              .replace(/\*+\{\{\s*Demo Website\s*\}\}\*+/gi, cleanDemoUrl)
+              .replace(/\*+\{\{\s*demoSiteUrl\s*\}\}\*+/gi, cleanDemoUrl)
+              .replace(/\{\{\s*Demo Website\s*\}\}/gi, cleanDemoUrl)
+              .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
             
             await sendColdEmail({
               to: currentLead.email,
@@ -489,14 +497,17 @@ app.post('/api/leads/:id/send', async (req, res) => {
 
     db.updateLead(lead.id, { status: 'sending', error: undefined });
 
+    const cleanDemoUrl = (lead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
     const rawSubject = subject || `Website Redesign Demo for ${lead.name}`;
     const resolvedSubject = rawSubject
       .replace(/\{\{\s*Business Name\s*\}\}/gi, lead.name)
       .replace(/\{\{\s*Category\s*\}\}/gi, lead.category || 'your business')
       .replace(/\{\{\s*SEO Score\s*\}\}/gi, lead.seoScore ? `${lead.seoScore}/100` : 'N/A')
       .replace(/\{\{\s*GMB Rating\s*\}\}/gi, lead.gmbRating ? `${lead.gmbRating}/5` : 'N/A')
-      .replace(/\{\{\s*Demo Website\s*\}\}/gi, lead.demoSiteUrl || '')
-      .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, lead.demoSiteUrl || '');
+      .replace(/\*+\{\{\s*Demo Website\s*\}\}\*+/gi, cleanDemoUrl)
+      .replace(/\*+\{\{\s*demoSiteUrl\s*\}\}\*+/gi, cleanDemoUrl)
+      .replace(/\{\{\s*Demo Website\s*\}\}/gi, cleanDemoUrl)
+      .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
 
     await sendColdEmail({
       to: lead.email,
@@ -786,28 +797,36 @@ app.post('/api/settings/test-ai', async (req, res) => {
       }
     } else if (provider === 'openai') {
       const cleanKey = apiKey.trim();
-      const modelName = model || 'gpt-4o-mini';
+      const modelName = model || 'gpt-4o';
+      const isReasoning = modelName.startsWith('o1') || modelName.startsWith('o3');
+
       try {
-        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+        const payload: any = {
           model: modelName,
-          messages: [{ role: 'user', content: 'Return only "OK"' }],
-          max_tokens: 5
-        }, {
+          messages: [{ role: 'user', content: 'Say OK' }]
+        };
+        if (isReasoning) {
+          payload.max_completion_tokens = 25;
+        } else {
+          payload.max_tokens = 5;
+        }
+
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
           headers: {
             'Authorization': `Bearer ${cleanKey}`,
             'Content-Type': 'application/json'
           },
-          timeout: 15000
+          timeout: 20000
         });
 
         if (response.data?.choices?.[0]?.message?.content) {
           return res.json({
             success: true,
-            message: `ChatGPT / OpenAI connected successfully! (Model: ${modelName})`,
+            message: `ChatGPT / OpenAI connected successfully! Active model: "${modelName}"`,
             verifiedModel: modelName
           });
         }
-        return res.json({ success: true, message: 'ChatGPT / OpenAI API connection verified successfully!' });
+        return res.json({ success: true, message: `ChatGPT / OpenAI connected! (Model: ${modelName})` });
       } catch (err: any) {
         const apiError = err.response?.data?.error;
         if (apiError) {
@@ -819,24 +838,62 @@ app.post('/api/settings/test-ai', async (req, res) => {
         return res.status(500).json({ success: false, error: err.message });
       }
     } else if (provider === 'deepseek') {
-      await axios.post('https://api.deepseek.com/chat/completions', {
-        model: 'deepseek-chat',
+      const modelName = model || 'deepseek-chat';
+      const response = await axios.post('https://api.deepseek.com/chat/completions', {
+        model: modelName,
         messages: [{ role: 'user', content: 'Return only "OK"' }],
-        max_tokens: 5
+        max_tokens: 10
       }, {
-        headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
-        timeout: 15000
+        headers: { 'Authorization': `Bearer ${apiKey.trim()}`, 'Content-Type': 'application/json' },
+        timeout: 20000
       });
-      return res.json({ success: true, message: 'DeepSeek API connection verified successfully!' });
+      return res.json({ 
+        success: true, 
+        message: `DeepSeek connected successfully! Active model: "${modelName}"`,
+        verifiedModel: modelName
+      });
     } else {
-      // Claude
+      // Claude (Anthropic)
       const anthropic = new Anthropic({ apiKey: apiKey.trim() });
-      await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 5,
-        messages: [{ role: 'user', content: 'Return only "OK"' }]
+      const requestedModel = model || 'claude-3-7-sonnet-20250219';
+      const candidateModels = Array.from(new Set([
+        requestedModel,
+        'claude-3-7-sonnet-20250219',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+        'claude-3-opus-20240229'
+      ]));
+
+      let connectedModel = requestedModel;
+      let lastErr: any = null;
+
+      for (const mName of candidateModels) {
+        try {
+          await anthropic.messages.create({
+            model: mName,
+            max_tokens: 10,
+            messages: [{ role: 'user', content: 'Say OK' }]
+          });
+          connectedModel = mName;
+          lastErr = null;
+          break;
+        } catch (cErr: any) {
+          lastErr = cErr;
+        }
+      }
+
+      if (lastErr) {
+        return res.status(400).json({
+          success: false,
+          error: `Anthropic Claude Error: ${lastErr.message}`
+        });
+      }
+
+      return res.json({ 
+        success: true, 
+        message: `Anthropic Claude connected successfully! Active model: "${connectedModel}"`,
+        verifiedModel: connectedModel
       });
-      return res.json({ success: true, message: 'Anthropic Claude connected successfully!' });
     }
   } catch (error: any) {
     return res.status(500).json({ 

@@ -116,86 +116,127 @@ export async function crawlWebsite(url: string): Promise<{ text: string; email?:
 
 // Universal CSV Parser (supports Leads Gorilla CSVs and generic CSV exports)
 export function parseLeadsCSV(csvContent: string): any[] {
-  const lines = csvContent.split(/\r?\n/);
-  if (lines.length < 2) return [];
+  if (!csvContent || typeof csvContent !== 'string') return [];
 
-  const parseCSVLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = '';
+  // Remove Byte Order Mark (BOM) if present
+  const cleanContent = csvContent.replace(/^\uFEFF/, '').trim();
+  if (!cleanContent) return [];
+
+  // Robust RFC 4180 CSV character-by-character parser handling quotes, escaped quotes (""), and multiline fields
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentField = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < cleanContent.length; i++) {
+    const char = cleanContent[i];
+    const nextChar = cleanContent[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped double quote ("")
+        currentField += '"';
+        i++; // skip next quote
       } else {
-        result.push(current.trim());
+        // Toggle quote state
+        inQuotes = !inQuotes;
       }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      // End of line
+      if (char === '\r' && nextChar === '\n') {
+        i++; // skip \n in CRLF
+      }
+      currentRow.push(currentField.trim());
+      currentField = '';
+      if (currentRow.some(field => field.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+    } else {
+      currentField += char;
     }
-    result.push(current.trim());
-    return result.map(val => val.replace(/^"|"$/g, ''));
-  };
+  }
 
-  const headers = parseCSVLine(lines[0]);
-  
+  // Push final field/row if any
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some(field => field.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map(h => h.replace(/^["']|["']$/g, '').trim());
+
   const getIndex = (keys: string[]): number => {
     return headers.findIndex(h => {
-      const headerLower = h.toLowerCase().replace(/[\s_-]/g, '');
+      const headerLower = h.toLowerCase().replace(/[^a-z0-9]/g, '');
       return keys.some(key => {
-        const keyLower = key.toLowerCase().replace(/[\s_-]/g, '');
-        return headerLower.includes(keyLower) || keyLower.includes(headerLower);
+        const keyLower = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return headerLower === keyLower || headerLower.includes(keyLower) || keyLower.includes(headerLower);
       });
     });
   };
 
-  const nameIdx = getIndex(['businessname', 'name', 'company', 'title', 'business']);
-  const emailIdx = getIndex(['email', 'mail', 'contactemail']);
-  const websiteIdx = getIndex(['website', 'url', 'site', 'web', 'domain']);
-  const phoneIdx = getIndex(['phone', 'tel', 'contactphone', 'telephone']);
-  const whatsappIdx = getIndex(['whatsapp', 'wa', 'whatsappphone', 'mobile', 'cell']);
-  const categoryIdx = getIndex(['category', 'niche', 'industry', 'type']);
-  const seoScoreIdx = getIndex(['seoscore', 'seo', 'score']);
-  const gmbRatingIdx = getIndex(['gmbrating', 'rating', 'googleplacesrating', 'stars']);
-  const seoIssuesIdx = getIndex(['seoissues', 'issues', 'auditdetails', 'problems', 'errors']);
+  const nameIdx = getIndex(['businessname', 'companyname', 'name', 'company', 'title', 'business', 'leadname', 'client', 'accountname', 'organization']);
+  const emailIdx = getIndex(['email', 'emailaddress', 'contactemail', 'mail', 'primaryemail', 'businessemail']);
+  const websiteIdx = getIndex(['website', 'websiteurl', 'url', 'site', 'web', 'domain', 'webaddress']);
+  const phoneIdx = getIndex(['phone', 'phonenumber', 'tel', 'contactphone', 'telephone', 'mobile', 'cell', 'officephone']);
+  const whatsappIdx = getIndex(['whatsapp', 'whatsappphone', 'whatsappnumber', 'wa', 'mobile', 'cell']);
+  const categoryIdx = getIndex(['category', 'niche', 'industry', 'type', 'businesscategory', 'tags', 'servicetype']);
+  const seoScoreIdx = getIndex(['seoscore', 'seo', 'score', 'auditscore', 'pagespeed', 'performancescore']);
+  const gmbRatingIdx = getIndex(['gmbrating', 'rating', 'googleplacesrating', 'stars', 'reviewrating', 'googlerating']);
+  const seoIssuesIdx = getIndex(['seoissues', 'issues', 'auditdetails', 'problems', 'errors', 'websiteissues', 'auditissues', 'recommendations']);
 
   const leads: any[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
+  for (let r = 1; r < rows.length; r++) {
+    const values = rows[r].map(v => v.replace(/^["']|["']$/g, '').trim());
+    if (values.every(v => v === '')) continue;
 
-    const values = parseCSVLine(line);
-    if (values.length < headers.length * 0.5) continue;
+    let name = nameIdx !== -1 && values[nameIdx] ? values[nameIdx] : '';
+    const email = emailIdx !== -1 && values[emailIdx] ? values[emailIdx] : '';
+    const website = websiteIdx !== -1 && values[websiteIdx] ? values[websiteIdx] : '';
+    const phone = phoneIdx !== -1 && values[phoneIdx] ? values[phoneIdx] : '';
+    const rawWhatsapp = whatsappIdx !== -1 && values[whatsappIdx] ? values[whatsappIdx] : '';
+    const category = categoryIdx !== -1 && values[categoryIdx] ? values[categoryIdx] : '';
 
-    const name = nameIdx !== -1 ? values[nameIdx] : '';
+    // If name is missing, attempt to derive from website or email
+    if (!name) {
+      if (website) {
+        try {
+          const host = website.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+          name = host.split('.')[0].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        } catch (_) {}
+      } else if (email) {
+        name = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      }
+    }
+
     if (!name) continue;
 
-    const email = emailIdx !== -1 ? values[emailIdx] : '';
-    const website = websiteIdx !== -1 ? values[websiteIdx] : '';
-    const phone = phoneIdx !== -1 ? values[phoneIdx] : '';
-    const rawWhatsapp = whatsappIdx !== -1 ? values[whatsappIdx] : '';
-    const category = categoryIdx !== -1 ? values[categoryIdx] : '';
-    
     let seoScore: number | undefined = undefined;
     if (seoScoreIdx !== -1 && values[seoScoreIdx]) {
       const parsed = parseFloat(values[seoScoreIdx].replace(/[^0-9.]/g, ''));
-      if (!isNaN(parsed)) seoScore = parsed;
+      if (!isNaN(parsed) && parsed >= 0) seoScore = parsed;
     }
 
     let gmbRating: number | undefined = undefined;
     if (gmbRatingIdx !== -1 && values[gmbRatingIdx]) {
       const parsed = parseFloat(values[gmbRatingIdx].replace(/[^0-9.]/g, ''));
-      if (!isNaN(parsed)) gmbRating = parsed;
+      if (!isNaN(parsed) && parsed >= 0) gmbRating = parsed;
     }
 
     let seoIssues: string[] = [];
     if (seoIssuesIdx !== -1 && values[seoIssuesIdx]) {
       const issuesStr = values[seoIssuesIdx];
       seoIssues = issuesStr
-        .split(/[,;|]/)
-        .map(s => s.trim())
+        .split(/[,;|•\n]/)
+        .map(s => s.trim().replace(/^[-*•]\s*/, ''))
         .filter(s => s.length > 3);
     }
 
@@ -207,10 +248,10 @@ export function parseLeadsCSV(csvContent: string): any[] {
       website: website || undefined,
       phone: phone || undefined,
       whatsapp: whatsapp || undefined,
-      category: category || undefined,
-      seoScore,
-      gmbRating,
-      seoIssues: seoIssues.length > 0 ? seoIssues : ['Optimize Page Speed', 'Mobile Viewport Audit']
+      category: category || 'Local Business',
+      seoScore: seoScore !== undefined ? seoScore : 70,
+      gmbRating: gmbRating !== undefined ? gmbRating : 4.5,
+      seoIssues: seoIssues.length > 0 ? seoIssues : ['Optimize Page Speed', 'Mobile Viewport Audit', 'Schema Markup Missing']
     });
   }
 

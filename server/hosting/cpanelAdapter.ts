@@ -74,37 +74,43 @@ export class CpanelAdapter implements HostingAdapter {
     const host = this.getHostUrl(settings);
     const user = settings.cpanelUser?.trim();
     const token = settings.cpanelApiToken?.trim();
-    const baseDomain = (settings.baseDomain || '').replace(/^https?:\/\//, '').replace(/\/$/, '').trim();
+    const cleanSub = subdomain.replace(/[*_~`]/g, '').trim();
+    const baseDomain = (settings.baseDomain || '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, '')
+      .replace(/^(\*+\.?)*/, '')
+      .replace(/[*]/g, '')
+      .trim();
 
     // If credentials are incomplete, fallback to local wildcard adapter to prevent pipeline crash
     if (!host || !user || !token || !baseDomain) {
       console.warn('[cPanel Adapter] Missing cPanel host, user, or token. Falling back to local wildcard storage.');
-      return wildcardAdapter.createSubdomain(subdomain, settings);
+      return wildcardAdapter.createSubdomain(cleanSub, settings);
     }
 
     try {
       const endpoint = `${host}/execute/SubDomain/addsubdomain`;
       const response = await this.executeUapi(endpoint, 'GET', {
-        domain: subdomain,
+        domain: cleanSub,
         rootdomain: baseDomain,
-        dir: `public_html/${subdomain}`
+        dir: `public_html/${cleanSub}`
       }, settings);
 
       const data = response.data;
       if (data.status === 1 || (data.errors && data.errors[0]?.includes('already exists'))) {
-        const fullUrl = `https://${subdomain}.${baseDomain}`;
+        const fullUrl = `https://${cleanSub}.${baseDomain}`;
         return {
           success: true,
-          subdomain,
+          subdomain: cleanSub,
           url: fullUrl,
-          message: `cPanel subdomain ${subdomain}.${baseDomain} created successfully.`
+          message: `cPanel subdomain ${cleanSub}.${baseDomain} created successfully.`
         };
       } else {
         const errorMsg = data.errors ? data.errors.join(', ') : 'Unknown cPanel error';
         console.error('[cPanel Adapter] Subdomain creation failed:', errorMsg);
         return {
           success: false,
-          subdomain,
+          subdomain: cleanSub,
           url: '',
           error: `cPanel Error: ${errorMsg}`
         };
@@ -113,35 +119,41 @@ export class CpanelAdapter implements HostingAdapter {
       console.error('[cPanel Adapter] Request failed:', err.message);
       // Fallback to local
       console.warn('[cPanel Adapter] Falling back to local wildcard storage due to connection error.');
-      return wildcardAdapter.createSubdomain(subdomain, settings);
+      return wildcardAdapter.createSubdomain(cleanSub, settings);
     }
   }
 
   async deployWebsite(subdomain: string, html: string, settings: Settings): Promise<DeployResult> {
+    const cleanSub = subdomain.replace(/[*_~`]/g, '').trim();
     // Also store locally for previewing
-    await wildcardAdapter.deployWebsite(subdomain, html, settings);
+    await wildcardAdapter.deployWebsite(cleanSub, html, settings);
 
     const host = this.getHostUrl(settings);
     const user = settings.cpanelUser?.trim();
     const token = settings.cpanelApiToken?.trim();
-    const baseDomain = (settings.baseDomain || '').replace(/^https?:\/\//, '').replace(/\/$/, '').trim();
+    const baseDomain = (settings.baseDomain || '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/$/, '')
+      .replace(/^(\*+\.?)*/, '')
+      .replace(/[*]/g, '')
+      .trim();
 
     if (!host || !user || !token || !baseDomain) {
-      return wildcardAdapter.deployWebsite(subdomain, html, settings);
+      return wildcardAdapter.deployWebsite(cleanSub, html, settings);
     }
 
     try {
       // Use cPanel Fileman save_file_content API with URL-encoded form data
       const endpoint = `${host}/execute/Fileman/save_file_content`;
       const form = new URLSearchParams();
-      form.append('dir', `public_html/${subdomain}`);
+      form.append('dir', `public_html/${cleanSub}`);
       form.append('filename', 'index.html');
       form.append('content', html);
 
       const response = await this.executeUapi(endpoint, 'POST', form.toString(), settings, true);
 
       if (response.data.status === 1) {
-        const fullUrl = `https://${subdomain}.${baseDomain}`;
+        const fullUrl = `https://${cleanSub}.${baseDomain}`;
         return {
           success: true,
           url: fullUrl,

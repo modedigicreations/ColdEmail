@@ -54,7 +54,9 @@ interface Lead {
 interface Settings {
   aiProvider: 'claude' | 'deepseek' | 'gemini' | 'openai';
   anthropicApiKey: string;
+  anthropicModel?: string;
   deepseekApiKey: string;
+  deepseekModel?: string;
   geminiApiKey?: string;
   geminiModel?: string;
   openaiApiKey?: string;
@@ -114,11 +116,13 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>({
     aiProvider: 'gemini',
     anthropicApiKey: '',
+    anthropicModel: 'claude-3-7-sonnet-20250219',
     deepseekApiKey: '',
+    deepseekModel: 'deepseek-chat',
     geminiApiKey: '',
-    geminiModel: 'gemini-3.8-flash',
+    geminiModel: 'gemini-2.5-flash',
     openaiApiKey: '',
-    openaiModel: 'gpt-4o-mini',
+    openaiModel: 'gpt-4o',
     emailProvider: 'gmail',
     gmailEmail: '',
     gmailAppPassword: '',
@@ -511,6 +515,7 @@ export default function App() {
 
   const [testingAi, setTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isDraggingCSV, setIsDraggingCSV] = useState(false);
 
   const [testingCpanel, setTestingCpanel] = useState(false);
   const [cpanelTestResult, setCpanelTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -523,7 +528,11 @@ export default function App() {
                      settings.aiProvider === 'openai' ? settings.openaiApiKey :
                      settings.aiProvider === 'deepseek' ? settings.deepseekApiKey :
                      settings.anthropicApiKey;
-      const model = settings.aiProvider === 'openai' ? settings.openaiModel : settings.geminiModel;
+      const model = settings.aiProvider === 'openai' ? (settings.openaiModel || 'gpt-4o') :
+                    settings.aiProvider === 'gemini' ? (settings.geminiModel || 'gemini-2.5-flash') :
+                    settings.aiProvider === 'deepseek' ? (settings.deepseekModel || 'deepseek-chat') :
+                    (settings.anthropicModel || 'claude-3-7-sonnet-20250219');
+
       const res = await fetch(`${API_BASE}/settings/test-ai`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -541,6 +550,10 @@ export default function App() {
             setSettings(prev => ({ ...prev, openaiModel: data.verifiedModel }));
           } else if (settings.aiProvider === 'gemini') {
             setSettings(prev => ({ ...prev, geminiModel: data.verifiedModel }));
+          } else if (settings.aiProvider === 'claude') {
+            setSettings(prev => ({ ...prev, anthropicModel: data.verifiedModel }));
+          } else if (settings.aiProvider === 'deepseek') {
+            setSettings(prev => ({ ...prev, deepseekModel: data.verifiedModel }));
           }
         }
       } else {
@@ -579,14 +592,13 @@ export default function App() {
     }
   };
 
-  // CSV Drag/Drop
-  const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  // CSV Upload & Drag/Drop
+  const uploadCSVFile = async (file: File) => {
+    if (!file) return;
     
     setIsLoading(true);
     const formData = new FormData();
-    formData.append('file', files[0]);
+    formData.append('file', file);
 
     try {
       const res = await fetch(`${API_BASE}/leads/upload`, {
@@ -594,17 +606,32 @@ export default function App() {
         body: formData
       });
       const data = await res.json();
-      if (res.ok) {
-        showMsg(`Imported ${data.count} new leads out of ${data.total} parsed.`);
+      if (res.ok && data.success) {
+        if (data.count > 0) {
+          showMsg(`Imported ${data.count} new lead${data.count === 1 ? '' : 's'}!${data.skipped > 0 ? ` (${data.skipped} duplicates skipped)` : ''}`, 'success');
+        } else if (data.total > 0) {
+          showMsg(`All ${data.total} parsed leads already exist in your pipeline.`, 'success');
+        } else {
+          showMsg('CSV parsed but no valid lead rows found. Please ensure headers like Name, Email, Website, or Phone are included.', 'error');
+        }
         fetchLeads();
       } else {
         showMsg(data.error || 'CSV upload failed', 'error');
       }
-    } catch (err) {
-      showMsg('Network error during file upload', 'error');
+    } catch (err: any) {
+      showMsg(`Network error during file upload: ${err.message || 'Check connection'}`, 'error');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      await uploadCSVFile(files[0]);
+    }
+    // Reset file input value so selecting the same file triggers change event
+    e.target.value = '';
   };
 
   const checkAutomationStatus = async () => {
@@ -875,13 +902,16 @@ export default function App() {
   };
 
   const resolveSubject = (subjectTemplate: string, lead: Lead) => {
+    const cleanDemoUrl = (lead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
     return subjectTemplate
       .replace(/\{\{\s*Business Name\s*\}\}/gi, lead.name)
       .replace(/\{\{\s*Category\s*\}\}/gi, lead.category || 'your business')
       .replace(/\{\{\s*SEO Score\s*\}\}/gi, lead.seoScore ? `${lead.seoScore}/100` : 'N/A')
       .replace(/\{\{\s*GMB Rating\s*\}\}/gi, lead.gmbRating ? `${lead.gmbRating}/5` : 'N/A')
-      .replace(/\{\{\s*Demo Website\s*\}\}/gi, lead.demoSiteUrl || '')
-      .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, lead.demoSiteUrl || '');
+      .replace(/\*+\{\{\s*Demo Website\s*\}\}\*+/gi, cleanDemoUrl)
+      .replace(/\*+\{\{\s*demoSiteUrl\s*\}\}\*+/gi, cleanDemoUrl)
+      .replace(/\{\{\s*Demo Website\s*\}\}/gi, cleanDemoUrl)
+      .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
   };
 
   const sendLeadEmail = async (id: string) => {
@@ -1451,18 +1481,20 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <div className="form-group" style={{ maxWidth: '340px' }}>
+                  <div className="form-group" style={{ maxWidth: '380px' }}>
                     <label>Gemini Model</label>
                     <select 
                       className="form-control"
-                      value={settings.geminiModel || 'gemini-3.8-flash'}
+                      value={settings.geminiModel || 'gemini-2.5-flash'}
                       onChange={e => setSettings({ ...settings, geminiModel: e.target.value })}
                     >
-                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Recommended / Latest)</option>
-                      <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
-                      <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Ultra Fast)</option>
+                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Reasoning & Copy)</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash (Next-Gen Production)</option>
                       <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning)</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Preview)</option>
+                      <option value="gemini-3.6-flash">Gemini 3.6 Flash (Preview)</option>
                     </select>
                   </div>
                 </div>
@@ -1502,69 +1534,99 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <div className="form-group" style={{ maxWidth: '340px' }}>
-                    <label>ChatGPT Model</label>
+                  <div className="form-group" style={{ maxWidth: '380px' }}>
+                    <label>ChatGPT / OpenAI Model</label>
                     <select 
                       className="form-control"
-                      value={settings.openaiModel || 'gpt-4o-mini'}
+                      value={settings.openaiModel || 'gpt-4o'}
                       onChange={e => setSettings({ ...settings, openaiModel: e.target.value })}
                     >
-                      <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cost-Effective - Recommended)</option>
-                      <option value="gpt-4o">GPT-4o (Flagship Omnimodal / Elite Copy)</option>
+                      <option value="gpt-4o">GPT-4o (Flagship Omnimodal / Recommended)</option>
+                      <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cost-Effective)</option>
+                      <option value="o3-mini">o3-mini (Latest High-Speed Reasoning)</option>
+                      <option value="o1">o1 (Full Reasoning / Complex Analysis)</option>
+                      <option value="o1-mini">o1-mini (Fast Reasoning)</option>
                       <option value="chatgpt-4o-latest">ChatGPT-4o Latest</option>
                       <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Legacy Fast)</option>
                     </select>
                   </div>
                 </div>
               )}
 
               {settings.aiProvider === 'claude' && (
-                <div className="form-group">
-                  <label>Claude Anthropic API Key</label>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                    <input 
-                      type="password" 
-                      className="form-control" 
-                      value={settings.anthropicApiKey}
-                      onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
-                      placeholder="sk-ant-..."
-                      style={{ flex: 1 }}
-                    />
-                    <button 
-                      type="button" 
-                      className="btn btn-secondary"
-                      onClick={handleTestAi}
-                      disabled={testingAi || !settings.anthropicApiKey}
-                      style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                <div>
+                  <div className="form-group">
+                    <label>Claude Anthropic API Key</label>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input 
+                        type="password" 
+                        className="form-control" 
+                        value={settings.anthropicApiKey}
+                        onChange={e => setSettings({ ...settings, anthropicApiKey: e.target.value })}
+                        placeholder="sk-ant-..."
+                        style={{ flex: 1 }}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary"
+                        onClick={handleTestAi}
+                        disabled={testingAi || !settings.anthropicApiKey}
+                        style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                      >
+                        {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ maxWidth: '380px' }}>
+                    <label>Claude Model</label>
+                    <select 
+                      className="form-control"
+                      value={settings.anthropicModel || 'claude-3-7-sonnet-20250219'}
+                      onChange={e => setSettings({ ...settings, anthropicModel: e.target.value })}
                     >
-                      {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
-                    </button>
+                      <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning - Recommended / Latest)</option>
+                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Capability & Speed)</option>
+                      <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Ultra Fast & Lightweight)</option>
+                      <option value="claude-3-opus-20240229">Claude 3 Opus (Deep Reasoning & Writing)</option>
+                    </select>
                   </div>
                 </div>
               )}
 
               {settings.aiProvider === 'deepseek' && (
-                <div className="form-group">
-                  <label>DeepSeek API Key</label>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                    <input 
-                      type="password" 
-                      className="form-control" 
-                      value={settings.deepseekApiKey}
-                      onChange={e => setSettings({ ...settings, deepseekApiKey: e.target.value })}
-                      placeholder="sk-..."
-                      style={{ flex: 1 }}
-                    />
-                    <button 
-                      type="button" 
-                      className="btn btn-secondary"
-                      onClick={handleTestAi}
-                      disabled={testingAi || !settings.deepseekApiKey}
-                      style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                <div>
+                  <div className="form-group">
+                    <label>DeepSeek API Key</label>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input 
+                        type="password" 
+                        className="form-control" 
+                        value={settings.deepseekApiKey}
+                        onChange={e => setSettings({ ...settings, deepseekApiKey: e.target.value })}
+                        placeholder="sk-..."
+                        style={{ flex: 1 }}
+                      />
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary"
+                        onClick={handleTestAi}
+                        disabled={testingAi || !settings.deepseekApiKey}
+                        style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '6px 12px' }}
+                      >
+                        {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ maxWidth: '380px' }}>
+                    <label>DeepSeek Model</label>
+                    <select 
+                      className="form-control"
+                      value={settings.deepseekModel || 'deepseek-chat'}
+                      onChange={e => setSettings({ ...settings, deepseekModel: e.target.value })}
                     >
-                      {testingAi ? <RefreshCw size={14} className="spin" /> : <Play size={14} />} Test Key
-                    </button>
+                      <option value="deepseek-chat">DeepSeek-V3 Chat (Recommended / Latest)</option>
+                      <option value="deepseek-reasoner">DeepSeek-R1 (Deep Reasoning)</option>
+                    </select>
                   </div>
                 </div>
               )}
@@ -1616,9 +1678,10 @@ export default function App() {
                     type="text" 
                     className="form-control" 
                     value={settings.baseDomain}
-                    onChange={e => setSettings({ ...settings, baseDomain: e.target.value })}
+                    onChange={e => setSettings({ ...settings, baseDomain: e.target.value.replace(/^(\*+\.?)*/, '').replace(/[*]/g, '').trim() })}
                     placeholder="demo.modedigicreations.com"
                   />
+                  <small style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Auto-sanitized (wildcards and asterisks removed)</small>
                 </div>
               </div>
 
@@ -2095,14 +2158,40 @@ export default function App() {
 
               {activeSubTab === 'import' && (
                 <div>
-                  <div className="upload-zone" onClick={() => document.getElementById('csv-input')?.click()}>
-                    <UploadCloud size={32} color="var(--primary)" style={{ margin: '0 auto 10px' }} />
-                    <p style={{ fontWeight: 500, fontSize: '14px' }}>Click to select or drag & drop CSV file (Leads Gorilla or Universal)</p>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '4px' }}>Supported columns: Name, Email, Website, Phone / WhatsApp, Category, SEO Score</p>
+                  <div 
+                    className={`upload-zone ${isDraggingCSV ? 'dragover' : ''}`}
+                    onClick={() => document.getElementById('csv-input')?.click()}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingCSV(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingCSV(false); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDraggingCSV(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        uploadCSVFile(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    style={{
+                      border: isDraggingCSV ? '2px dashed var(--primary)' : '2px dashed var(--border-color)',
+                      backgroundColor: isDraggingCSV ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                      transition: 'all 0.2s ease',
+                      cursor: 'pointer',
+                      padding: '32px 20px',
+                      borderRadius: '8px',
+                      textAlign: 'center'
+                    }}
+                  >
+                    <UploadCloud size={36} color={isDraggingCSV ? "var(--primary)" : "var(--text-muted)"} style={{ margin: '0 auto 10px' }} />
+                    <p style={{ fontWeight: 600, fontSize: '14px', margin: 0, color: 'var(--text-main)' }}>
+                      {isDraggingCSV ? 'Drop your CSV file here' : 'Click to select or drag & drop CSV file'}
+                    </p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '6px', marginBottom: 0 }}>
+                      Compatible with Leads Gorilla, Apollo, D7, and Universal CSV exports (Name, Email, Website, Phone, Category)
+                    </p>
                     <input 
                       type="file" 
                       id="csv-input" 
-                      accept=".csv" 
+                      accept=".csv,text/csv" 
                       style={{ display: 'none' }}
                       onChange={handleCSVUpload}
                     />

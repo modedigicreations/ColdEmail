@@ -33,7 +33,9 @@ export interface Lead {
 export interface Settings {
   aiProvider: 'claude' | 'deepseek' | 'gemini' | 'openai';
   anthropicApiKey: string;
+  anthropicModel?: string;
   deepseekApiKey: string;
+  deepseekModel?: string;
   geminiApiKey?: string;
   geminiModel?: string;
   openaiApiKey?: string;
@@ -323,11 +325,13 @@ interface DatabaseSchema {
 const DEFAULT_SETTINGS: Settings = {
   aiProvider: 'gemini',
   anthropicApiKey: '',
+  anthropicModel: 'claude-3-7-sonnet-20250219',
   deepseekApiKey: '',
+  deepseekModel: 'deepseek-chat',
   geminiApiKey: '',
-  geminiModel: 'gemini-3.8-flash',
+  geminiModel: 'gemini-2.5-flash',
   openaiApiKey: '',
-  openaiModel: 'gpt-4o-mini',
+  openaiModel: 'gpt-4o',
   emailProvider: 'gmail',
   gmailEmail: '',
   gmailAppPassword: '',

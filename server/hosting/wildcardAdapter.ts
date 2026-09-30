@@ -31,20 +31,26 @@ export class WildcardAdapter implements HostingAdapter {
         fs.mkdirSync(subDir, { recursive: true });
       }
 
+      const cleanSub = subdomain.replace(/[*_~`]/g, '').trim();
       const baseDomain = settings.baseDomain || 'demo.modedigicreations.com';
-      const cleanBase = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-      const fullUrl = `https://${subdomain}.${cleanBase}`;
+      const cleanBase = baseDomain
+        .replace(/^https?:\/\//, '')
+        .replace(/\/$/, '')
+        .replace(/^(\*+\.?)*/, '')
+        .replace(/[*]/g, '')
+        .trim();
+      const fullUrl = `https://${cleanSub}.${cleanBase}`;
 
       return {
         success: true,
-        subdomain,
+        subdomain: cleanSub,
         url: fullUrl,
-        message: `Subdomain allocated: ${subdomain}.${cleanBase}`
+        message: `Subdomain allocated: ${cleanSub}.${cleanBase}`
       };
     } catch (err: any) {
       return {
         success: false,
-        subdomain,
+        subdomain: subdomain.replace(/[*_~`]/g, '').trim(),
         url: '',
         error: `Failed to create local subdomain directory: ${err.message}`
       };
@@ -53,8 +59,9 @@ export class WildcardAdapter implements HostingAdapter {
 
   async deployWebsite(subdomain: string, html: string, settings: Settings): Promise<DeployResult> {
     try {
+      const cleanSub = subdomain.replace(/[*_~`]/g, '').trim();
       const sitesDir = getSitesDir();
-      const subDir = path.join(sitesDir, subdomain);
+      const subDir = path.join(sitesDir, cleanSub);
       if (!fs.existsSync(subDir)) {
         fs.mkdirSync(subDir, { recursive: true });
       }
@@ -63,8 +70,13 @@ export class WildcardAdapter implements HostingAdapter {
       fs.writeFileSync(indexPath, html, 'utf-8');
 
       const baseDomain = settings.baseDomain || 'demo.modedigicreations.com';
-      const cleanBase = baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-      const fullUrl = `https://${subdomain}.${cleanBase}`;
+      const cleanBase = baseDomain
+        .replace(/^https?:\/\//, '')
+        .replace(/\/$/, '')
+        .replace(/^(\*+\.?)*/, '')
+        .replace(/[*]/g, '')
+        .trim();
+      const fullUrl = `https://${cleanSub}.${cleanBase}`;
 
       return {
         success: true,
