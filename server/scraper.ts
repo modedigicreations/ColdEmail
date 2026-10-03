@@ -737,14 +737,14 @@ STRICT RULES:
         apiKey: apiKey.trim(),
         defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
       });
+      const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
 
       const requestedModel = settings?.anthropicModel || 'claude-3-7-sonnet-20250219';
       const candidateModels = Array.from(new Set([
         requestedModel,
         'claude-3-7-sonnet-20250219',
         'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022',
-        'claude-3-opus-20240229'
+        'claude-3-5-haiku-20241022'
       ]));
 
       for (const mName of candidateModels) {
@@ -754,7 +754,7 @@ STRICT RULES:
             max_tokens: 1500,
             temperature: 0.2,
             messages: [{ role: 'user', content: prompt }]
-          });
+          }, requestOptions);
           const content = message.content[0];
           if (content && content.type === 'text') {
             const rawText = content.text.trim();

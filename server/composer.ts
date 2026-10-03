@@ -195,13 +195,13 @@ Conclude the email using the provided contact details and email signature. Do no
       apiKey,
       defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
     });
+    const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
     const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
     const candidateModels = Array.from(new Set([
       requestedModel,
       'claude-3-7-sonnet-20250219',
       'claude-3-5-sonnet-20241022',
-      'claude-3-5-haiku-20241022',
-      'claude-3-opus-20240229'
+      'claude-3-5-haiku-20241022'
     ]));
 
     let lastError: any = null;
@@ -215,7 +215,7 @@ Conclude the email using the provided contact details and email signature. Do no
           messages: [
             { role: 'user', content: prompt }
           ]
-        });
+        }, requestOptions);
 
         const content = message.content[0];
         if (content.type === 'text') {
@@ -380,13 +380,13 @@ CRITICAL RULES:
         apiKey,
         defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
       });
+      const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
       const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
       const candidateModels = Array.from(new Set([
         requestedModel,
         'claude-3-7-sonnet-20250219',
         'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022',
-        'claude-3-opus-20240229'
+        'claude-3-5-haiku-20241022'
       ]));
 
       for (const mName of candidateModels) {
@@ -396,7 +396,7 @@ CRITICAL RULES:
             max_tokens: 600,
             temperature: 0.7,
             messages: [{ role: 'user', content: prompt }]
-          });
+          }, requestOptions);
 
           const content = message.content[0];
           if (content.type === 'text') {

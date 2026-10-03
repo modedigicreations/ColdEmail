@@ -33,10 +33,50 @@ app.use('/debug', express.static(path.join(__dirname, 'debug')));
 app.use('/sites', express.static(getSitesDir()));
 
 export function cleanAiErrorMessage(error: any): string {
-  const msg = error?.message || String(error);
-  if (msg.includes('anthropic-workspace-id') || msg.includes('scoped to a workspace')) {
-    return 'Anthropic Workspace Error: Your API key is an Organization-level key that requires a Workspace ID. Please enter your Anthropic Workspace ID in Settings (Settings > AI Engines > Anthropic Workspace ID, e.g. wrkspc_...), or create a Workspace-scoped key directly in console.anthropic.com/settings/workspaces.';
+  if (!error) return "Unknown error occurred";
+
+  let msg = "";
+  if (error?.error?.message) {
+    msg = error.error.message;
+  } else if (error?.message) {
+    msg = error.message;
+  } else {
+    msg = String(error);
   }
+
+  // Parse embedded JSON like: 404 {"type":"error","error":{"type":"not_found_error","message":"..."}}
+  const jsonMatch = msg.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed?.error?.message) {
+        msg = parsed.error.message;
+      }
+    } catch {}
+  }
+
+  const lower = msg.toLowerCase();
+
+  if (lower.includes("anthropic-workspace-id") || lower.includes("scoped to a workspace")) {
+    return "Anthropic Workspace Error: Your API key is an Organization-level key that requires a Workspace ID. Please enter your Anthropic Workspace ID in Settings (Settings > AI Engines > Anthropic Workspace ID, e.g. wrkspc_...), or create a Workspace-scoped key directly in console.anthropic.com/settings/workspaces.";
+  }
+
+  if (lower.includes("workspace") && (lower.includes("not found") || lower.includes("invalid") || lower.includes("does not exist") || lower.includes("does not have access"))) {
+    return `Anthropic Workspace Error: The Workspace ID provided is invalid or this API key does not have access to it (${msg}). Please verify your Workspace ID in console.anthropic.com/settings/workspaces.`;
+  }
+
+  if (lower.includes("model:") && (lower.includes("not_found") || lower.includes("not found"))) {
+    return `Anthropic Model Access Error: ${msg}. Your account/workspace does not have access to this model. Please select a supported model (e.g. Claude 3.5 Sonnet or Claude 3.5 Haiku) or verify your Anthropic model permissions at console.anthropic.com.`;
+  }
+
+  if (lower.includes("credit balance") || lower.includes("plans & billing") || lower.includes("insufficient credits") || lower.includes("balance is too low")) {
+    return "Anthropic Billing Error: Your Anthropic credit balance is too low or depleted. Please add credits at console.anthropic.com/settings/billing.";
+  }
+
+  if (lower.includes("invalid x-api-key") || lower.includes("api_key_invalid") || lower.includes("authentication_error")) {
+    return "Anthropic Auth Error: Invalid API key. Please check that you copied the complete Anthropic API key correctly.";
+  }
+
   return msg;
 }
 
@@ -912,41 +952,62 @@ app.post('/api/settings/test-ai', async (req, res) => {
     } else {
       // Claude (Anthropic)
       const workspaceId = (req.body?.anthropicWorkspaceId || db.getSettings().anthropicWorkspaceId || '').trim();
+      const requestedModel = (model || req.body?.model || db.getSettings().anthropicModel || 'claude-3-7-sonnet-20250219').trim();
+
       const anthropic = new Anthropic({ 
         apiKey: apiKey.trim(),
         defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
       });
-      const requestedModel = model || 'claude-3-7-sonnet-20250219';
+      const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
+
+      // Modern active candidate models only - Opus is omitted to prevent misleading 404s
       const candidateModels = Array.from(new Set([
         requestedModel,
         'claude-3-7-sonnet-20250219',
         'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022',
-        'claude-3-opus-20240229'
+        'claude-3-5-haiku-20241022'
       ]));
 
-      let connectedModel = requestedModel;
+      let connectedModel = '';
+      let primaryErr: any = null;
       let lastErr: any = null;
 
-      for (const mName of candidateModels) {
+      for (let i = 0; i < candidateModels.length; i++) {
+        const mName = candidateModels[i];
         try {
           await anthropic.messages.create({
             model: mName,
             max_tokens: 10,
             messages: [{ role: 'user', content: 'Say OK' }]
-          });
+          }, requestOptions);
           connectedModel = mName;
           lastErr = null;
           break;
         } catch (cErr: any) {
+          if (i === 0) {
+            primaryErr = cErr;
+          }
           lastErr = cErr;
+
+          // If the error is an auth failure, workspace error, or billing error, stopping is appropriate
+          const errMsg = cErr?.message || String(cErr);
+          if (
+            errMsg.includes('api-key') ||
+            errMsg.includes('authentication_error') ||
+            errMsg.includes('anthropic-workspace-id') ||
+            errMsg.includes('credit balance') ||
+            errMsg.includes('permission_error')
+          ) {
+            break;
+          }
         }
       }
 
-      if (lastErr) {
+      if (!connectedModel) {
+        const errToReport = primaryErr || lastErr;
         return res.status(400).json({
           success: false,
-          error: cleanAiErrorMessage(lastErr)
+          error: cleanAiErrorMessage(errToReport)
         });
       }
 

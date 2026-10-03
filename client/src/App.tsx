@@ -1605,7 +1605,7 @@ export default function App() {
                       <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning - Recommended / Latest)</option>
                       <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Capability & Speed)</option>
                       <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Ultra Fast & Lightweight)</option>
-                      <option value="claude-3-opus-20240229">Claude 3 Opus (Deep Reasoning & Writing)</option>
+                      <option value="claude-3-haiku-20240307">Claude 3 Haiku (Legacy Fast)</option>
                     </select>
                   </div>
                   <div className="form-group" style={{ maxWidth: '480px', marginTop: '12px' }}>

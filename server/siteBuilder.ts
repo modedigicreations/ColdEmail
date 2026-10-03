@@ -426,13 +426,13 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
         apiKey,
         defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
       });
+      const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
       const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
       const candidateModels = Array.from(new Set([
         requestedModel,
         'claude-3-7-sonnet-20250219',
         'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022',
-        'claude-3-opus-20240229'
+        'claude-3-5-haiku-20241022'
       ]));
 
       for (const mName of candidateModels) {
@@ -445,7 +445,7 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
             messages: [
               { role: 'user', content: userPrompt }
             ]
-          });
+          }, requestOptions);
 
           const content = message.content[0];
           if (content.type === 'text') {
