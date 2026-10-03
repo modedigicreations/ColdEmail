@@ -36,15 +36,19 @@ export function cleanAiErrorMessage(error: any): string {
   if (!error) return "Unknown error occurred";
 
   let msg = "";
+  let errorType = "";
+  const statusCode = error?.status || error?.statusCode;
+
   if (error?.error?.message) {
     msg = error.error.message;
+    errorType = error.error.type || "";
   } else if (error?.message) {
     msg = error.message;
   } else {
     msg = String(error);
   }
 
-  // Parse embedded JSON like: 404 {"type":"error","error":{"type":"not_found_error","message":"..."}}
+  // Parse embedded JSON like: 404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-3-7-sonnet-20250219"}}
   const jsonMatch = msg.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
@@ -52,10 +56,14 @@ export function cleanAiErrorMessage(error: any): string {
       if (parsed?.error?.message) {
         msg = parsed.error.message;
       }
+      if (parsed?.error?.type) {
+        errorType = parsed.error.type;
+      }
     } catch {}
   }
 
   const lower = msg.toLowerCase();
+  const typeLower = errorType.toLowerCase();
 
   if (lower.includes("anthropic-workspace-id") || lower.includes("scoped to a workspace")) {
     return "Anthropic Workspace Error: Your API key is an Organization-level key that requires a Workspace ID. Please enter your Anthropic Workspace ID in Settings (Settings > AI Engines > Anthropic Workspace ID, e.g. wrkspc_...), or create a Workspace-scoped key directly in console.anthropic.com/settings/workspaces.";
@@ -65,12 +73,22 @@ export function cleanAiErrorMessage(error: any): string {
     return `Anthropic Workspace Error: The Workspace ID provided is invalid or this API key does not have access to it (${msg}). Please verify your Workspace ID in console.anthropic.com/settings/workspaces.`;
   }
 
-  if (lower.includes("model:") && (lower.includes("not_found") || lower.includes("not found"))) {
-    return `Anthropic Model Access Error: ${msg}. Your account/workspace does not have access to this model. Please select a supported model (e.g. Claude 3.5 Sonnet or Claude 3.5 Haiku) or verify your Anthropic model permissions at console.anthropic.com.`;
+  if (
+    lower.startsWith("model:") || 
+    lower.includes("model:") || 
+    typeLower === "not_found_error" || 
+    statusCode === 404
+  ) {
+    const rawModel = msg.replace(/^model:\s*/i, '').trim();
+    return `Anthropic Model Access Error: "${rawModel}" is not provisioned or accessible for this workspace/account (requires Tier 2+ access or specific model enablement). Please select "Claude 3.5 Sonnet" or "Claude 3.5 Haiku" from the Claude Model dropdown, or check model permissions at console.anthropic.com.`;
   }
 
   if (lower.includes("credit balance") || lower.includes("plans & billing") || lower.includes("insufficient credits") || lower.includes("balance is too low")) {
     return "Anthropic Billing Error: Your Anthropic credit balance is too low or depleted. Please add credits at console.anthropic.com/settings/billing.";
+  }
+
+  if (lower.includes("api-key") || lower.includes("401") || lower.includes("authentication_error") || lower.includes("invalid x-api-key")) {
+    return "Anthropic Authentication Error: The Anthropic API key provided is invalid. Please verify or re-generate your API key at console.anthropic.com/settings/keys.";
   }
 
   if (lower.includes("invalid x-api-key") || lower.includes("api_key_invalid") || lower.includes("authentication_error")) {
@@ -952,7 +970,7 @@ app.post('/api/settings/test-ai', async (req, res) => {
     } else {
       // Claude (Anthropic)
       const workspaceId = (req.body?.anthropicWorkspaceId || db.getSettings().anthropicWorkspaceId || '').trim();
-      const requestedModel = (model || req.body?.model || db.getSettings().anthropicModel || 'claude-3-7-sonnet-20250219').trim();
+      const requestedModel = (model || req.body?.model || db.getSettings().anthropicModel || 'claude-3-5-sonnet-20241022').trim();
 
       const anthropic = new Anthropic({ 
         apiKey: apiKey.trim(),
@@ -960,20 +978,69 @@ app.post('/api/settings/test-ai', async (req, res) => {
       });
       const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
 
-      // Modern active candidate models only - Opus is omitted to prevent misleading 404s
-      const candidateModels = Array.from(new Set([
-        requestedModel,
-        'claude-3-7-sonnet-20250219',
-        'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022'
-      ]));
+      // 1. Try querying models.list() to get active accessible models for this key & workspace
+      let discoveredModels: string[] = [];
+      try {
+        const page = await anthropic.models.list(requestOptions);
+        if (page && Array.isArray(page.data)) {
+          discoveredModels = page.data.map((m: any) => m.id);
+        }
+      } catch (listErr: any) {
+        const errMsg = (listErr?.message || String(listErr)).toLowerCase();
+        // If credentials, workspace, or billing failed during discovery, report it immediately
+        if (
+          errMsg.includes('api-key') ||
+          errMsg.includes('401') ||
+          errMsg.includes('authentication_error') ||
+          errMsg.includes('anthropic-workspace-id') ||
+          errMsg.includes('credit balance') ||
+          errMsg.includes('balance is too low') ||
+          errMsg.includes('permission_error')
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: cleanAiErrorMessage(listErr)
+          });
+        }
+      }
+
+      // Build prioritized candidate models
+      const candidateModels: string[] = [];
+
+      if (discoveredModels.length > 0) {
+        if (discoveredModels.includes(requestedModel)) {
+          candidateModels.push(requestedModel);
+        }
+        const preferred = [
+          discoveredModels.find(m => m.includes('3-7-sonnet')),
+          discoveredModels.find(m => m.includes('3-5-sonnet')),
+          discoveredModels.find(m => m.includes('3-5-haiku')),
+          discoveredModels.find(m => m.includes('haiku')),
+          ...discoveredModels
+        ].filter(Boolean) as string[];
+
+        for (const p of preferred) {
+          if (!candidateModels.includes(p)) candidateModels.push(p);
+        }
+      } else {
+        // Fallback candidate sequence: test requested first, then 3.5 Sonnet, 3.5 Haiku, 3 Haiku, 3.7 Sonnet
+        const defaults = [
+          requestedModel,
+          'claude-3-5-sonnet-20241022',
+          'claude-3-5-haiku-20241022',
+          'claude-3-haiku-20240307',
+          'claude-3-7-sonnet-20250219'
+        ];
+        for (const d of defaults) {
+          if (!candidateModels.includes(d)) candidateModels.push(d);
+        }
+      }
 
       let connectedModel = '';
-      let primaryErr: any = null;
-      let lastErr: any = null;
+      let billingOrAuthError: any = null;
+      let modelAccessErrors: string[] = [];
 
-      for (let i = 0; i < candidateModels.length; i++) {
-        const mName = candidateModels[i];
+      for (const mName of candidateModels) {
         try {
           await anthropic.messages.create({
             model: mName,
@@ -981,39 +1048,49 @@ app.post('/api/settings/test-ai', async (req, res) => {
             messages: [{ role: 'user', content: 'Say OK' }]
           }, requestOptions);
           connectedModel = mName;
-          lastErr = null;
           break;
         } catch (cErr: any) {
-          if (i === 0) {
-            primaryErr = cErr;
-          }
-          lastErr = cErr;
+          const errMsg = (cErr?.message || String(cErr)).toLowerCase();
 
-          // If the error is an auth failure, workspace error, or billing error, stopping is appropriate
-          const errMsg = cErr?.message || String(cErr);
+          // Stop early if authentication, workspace, or credit balance is dead
           if (
             errMsg.includes('api-key') ||
+            errMsg.includes('401') ||
             errMsg.includes('authentication_error') ||
             errMsg.includes('anthropic-workspace-id') ||
             errMsg.includes('credit balance') ||
+            errMsg.includes('balance is too low') ||
             errMsg.includes('permission_error')
           ) {
+            billingOrAuthError = cErr;
             break;
           }
+
+          modelAccessErrors.push(mName);
         }
       }
 
       if (!connectedModel) {
-        const errToReport = primaryErr || lastErr;
+        if (billingOrAuthError) {
+          return res.status(400).json({
+            success: false,
+            error: cleanAiErrorMessage(billingOrAuthError)
+          });
+        }
         return res.status(400).json({
           success: false,
-          error: cleanAiErrorMessage(errToReport)
+          error: `Anthropic Model Access Error: None of the standard Claude models (${modelAccessErrors.join(', ')}) are provisioned for this workspace or account tier. Please check your model access permissions or credit tier at console.anthropic.com.`
         });
       }
 
+      const isFallback = connectedModel !== requestedModel;
+      const fallbackNote = isFallback
+        ? ` (Notice: "${requestedModel}" requires Tier 2+ access and is not provisioned for this workspace, so the active model has been automatically switched to "${connectedModel}".)`
+        : '';
+
       return res.json({ 
         success: true, 
-        message: `Anthropic Claude connected successfully! Active model: "${connectedModel}"${workspaceId ? ` (Workspace: ${workspaceId})` : ''}`,
+        message: `Anthropic Claude connected successfully! Active model: "${connectedModel}"${workspaceId ? ` (Workspace: ${workspaceId})` : ''}.${fallbackNote}`,
         verifiedModel: connectedModel
       });
     }

@@ -117,7 +117,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>({
     aiProvider: 'gemini',
     anthropicApiKey: '',
-    anthropicModel: 'claude-3-7-sonnet-20250219',
+    anthropicModel: 'claude-3-5-sonnet-20241022',
     anthropicWorkspaceId: '',
     deepseekApiKey: '',
     deepseekModel: 'deepseek-chat',
@@ -542,7 +542,7 @@ export default function App() {
       const model = settings.aiProvider === 'openai' ? (settings.openaiModel || 'gpt-4o') :
                     settings.aiProvider === 'gemini' ? (settings.geminiModel || 'gemini-2.5-flash') :
                     settings.aiProvider === 'deepseek' ? (settings.deepseekModel || 'deepseek-chat') :
-                    (settings.anthropicModel || 'claude-3-7-sonnet-20250219');
+                    (settings.anthropicModel || 'claude-3-5-sonnet-20241022');
 
       const res = await fetch(`${API_BASE}/settings/test-ai`, {
         method: 'POST',
@@ -1599,11 +1599,11 @@ export default function App() {
                     <label>Claude Model</label>
                     <select 
                       className="form-control"
-                      value={settings.anthropicModel || 'claude-3-7-sonnet-20250219'}
+                      value={settings.anthropicModel || 'claude-3-5-sonnet-20241022'}
                       onChange={e => setSettings({ ...settings, anthropicModel: e.target.value })}
                     >
-                      <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning - Recommended / Latest)</option>
-                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (High Capability & Speed)</option>
+                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended - Standard Tier 1+)</option>
+                      <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning - Requires Tier 2+)</option>
                       <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Ultra Fast & Lightweight)</option>
                       <option value="claude-3-haiku-20240307">Claude 3 Haiku (Legacy Fast)</option>
                     </select>

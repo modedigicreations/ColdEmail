@@ -326,7 +326,7 @@ interface DatabaseSchema {
 const DEFAULT_SETTINGS: Settings = {
   aiProvider: 'gemini',
   anthropicApiKey: '',
-  anthropicModel: 'claude-3-7-sonnet-20250219',
+  anthropicModel: 'claude-3-5-sonnet-20241022',
   anthropicWorkspaceId: '',
   deepseekApiKey: '',
   deepseekModel: 'deepseek-chat',
