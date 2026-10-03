@@ -1599,13 +1599,23 @@ export default function App() {
                     <label>Claude Model</label>
                     <select 
                       className="form-control"
-                      value={settings.anthropicModel || 'claude-3-5-sonnet-20241022'}
+                      value={settings.anthropicModel || 'claude-haiku-4-5-20251001'}
                       onChange={e => setSettings({ ...settings, anthropicModel: e.target.value })}
                     >
-                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Recommended - Standard Tier 1+)</option>
+                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (High Speed & Intelligence - Verified Active)</option>
+                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Standard Tier 1+)</option>
                       <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet (Hybrid Reasoning - Requires Tier 2+)</option>
                       <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (Ultra Fast & Lightweight)</option>
                       <option value="claude-3-haiku-20240307">Claude 3 Haiku (Legacy Fast)</option>
+                      {settings.anthropicModel && ![
+                        'claude-haiku-4-5-20251001',
+                        'claude-3-5-sonnet-20241022',
+                        'claude-3-7-sonnet-20250219',
+                        'claude-3-5-haiku-20241022',
+                        'claude-3-haiku-20240307'
+                      ].includes(settings.anthropicModel) && (
+                        <option value={settings.anthropicModel}>{settings.anthropicModel} (Active)</option>
+                      )}
                     </select>
                   </div>
                   <div className="form-group" style={{ maxWidth: '480px', marginTop: '12px' }}>

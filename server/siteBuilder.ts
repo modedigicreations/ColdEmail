@@ -427,12 +427,14 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
         defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
       });
       const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
-      const requestedModel = settings.anthropicModel || 'claude-3-7-sonnet-20250219';
+      const requestedModel = settings.anthropicModel || 'claude-haiku-4-5-20251001';
       const candidateModels = Array.from(new Set([
         requestedModel,
-        'claude-3-7-sonnet-20250219',
+        'claude-haiku-4-5-20251001',
         'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022'
+        'claude-3-5-haiku-20241022',
+        'claude-3-haiku-20240307',
+        'claude-3-7-sonnet-20250219'
       ]));
 
       for (const mName of candidateModels) {
