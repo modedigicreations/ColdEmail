@@ -1,9 +1,67 @@
-import { Anthropic } from '@anthropic-ai/sdk';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import axios from 'axios';
-import { Lead, Settings } from './db.js';
+import { Anthropic } from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios";
+import { Lead, Settings } from "./db.js";
 
-export function sanitizeHtmlOutput(raw: string): string {
+/**
+ * Validates that an HTML document is complete and will render visibly in a browser.
+ * Rejects truncated output, unclosed <style> blocks that consume the DOM, and missing bodies.
+ */
+export function isValidWebsiteHtml(html?: string | null): boolean {
+  if (!html || typeof html !== "string") return false;
+  const trimmed = html.trim();
+  if (trimmed.length < 200) return false;
+
+  const lower = trimmed.toLowerCase();
+
+  // Must have a <body> opening tag and a </body> closing tag
+  if (!lower.includes("<body") || !lower.includes("</body>")) {
+    return false;
+  }
+
+  // Must have balanced <style> tags (an unclosed <style> tag consumes the entire DOM below it as CSS)
+  const styleOpens = (lower.match(/<style\b[^>]*>/g) || []).length;
+  const styleCloses = (lower.match(/<\/style>/g) || []).length;
+  if (styleOpens > styleCloses) {
+    return false;
+  }
+
+  // Must have visible content inside <body>...</body>
+  const bodyMatch = trimmed.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  if (!bodyMatch) return false;
+
+  const bodyContent = bodyMatch[1].replace(/<!--[\s\S]*?-->/g, "").trim();
+  if (bodyContent.length < 100) return false;
+
+  // Verify that the body content is not trapped inside an unclosed style
+  if (bodyContent.toLowerCase().includes("<style") && !bodyContent.toLowerCase().includes("</style>")) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Extracts a sensible business name if the lead name is a generic placeholder or CSV header.
+ */
+export function getLeadDisplayName(lead: Lead): string {
+  let name = (lead.name || "").trim();
+  if (!name || name.toLowerCase().includes("category (as listed)") || name.toLowerCase().includes("trade / category")) {
+    const prevTitle = lead.demoSiteHtml?.match(/<title>([^|<]+)/i)?.[1]?.trim();
+    if (prevTitle && !prevTitle.toLowerCase().includes("category")) {
+      return prevTitle;
+    }
+    if (lead.website && !lead.website.toLowerCase().includes("category")) {
+      const cleanWeb = lead.website.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+      return cleanWeb.charAt(0).toUpperCase() + cleanWeb.slice(1);
+    }
+    return "Best of Brain";
+  }
+  return name;
+}
+
+export function sanitizeHtmlOutput(raw: string): string | null {
+  if (!raw || typeof raw !== "string") return null;
   let cleaned = raw.trim();
 
   // 1. Try to extract inside markdown code blocks first
@@ -12,21 +70,37 @@ export function sanitizeHtmlOutput(raw: string): string {
     cleaned = codeBlockMatch[1].trim();
   } else {
     // Strip leading/trailing code fences if present
-    cleaned = cleaned.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '');
+    cleaned = cleaned.replace(/^```(?:html)?\s*/i, "").replace(/\s*```$/i, "");
   }
 
   cleaned = cleaned.trim();
+
+  // Check for unclosed <style> tag
+  const lastStyleOpen = cleaned.lastIndexOf("<style");
+  const lastStyleClose = cleaned.lastIndexOf("</style>");
+  if (lastStyleOpen !== -1 && lastStyleOpen > lastStyleClose) {
+    // Style tag was never closed!
+    // If it never even reached <body>, this HTML is truncated in head and unrenderable
+    if (!cleaned.toLowerCase().includes("<body")) {
+      return null;
+    }
+    // If it reached body but style was somehow unclosed, close style cleanly
+    cleaned += "\n</style>";
+  }
 
   // 2. Try to extract complete HTML document
   const docMatch = cleaned.match(/(<!DOCTYPE\s+html[\s\S]*?<\/html>)/i) ||
                    cleaned.match(/(<html[\s\S]*?<\/html>)/i);
   if (docMatch) {
-    return docMatch[1].trim();
+    const candidate = docMatch[1].trim();
+    if (isValidWebsiteHtml(candidate)) {
+      return candidate;
+    }
   }
 
   // 3. Fallback: Wrap in valid HTML5 structure if fragment
-  if (!cleaned.toLowerCase().includes('<!doctype html') && !cleaned.toLowerCase().includes('<html')) {
-    cleaned = `<!DOCTYPE html>
+  if (!cleaned.toLowerCase().includes("<!doctype html") && !cleaned.toLowerCase().includes("<html")) {
+    const wrapped = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -38,19 +112,29 @@ export function sanitizeHtmlOutput(raw: string): string {
   ${cleaned}
 </body>
 </html>`;
-  } else {
-    // Ensure closing tags if output was slightly truncated
-    if (!cleaned.toLowerCase().includes('</body>')) cleaned += '\n</body>';
-    if (!cleaned.toLowerCase().includes('</html>')) cleaned += '\n</html>';
+    if (isValidWebsiteHtml(wrapped)) {
+      return wrapped;
+    }
   }
 
-  return cleaned;
+  // 4. If it has <html> and <body>, ensure closing tags if slightly truncated at end
+  if (cleaned.toLowerCase().includes("<body")) {
+    let repaired = cleaned;
+    if (!repaired.toLowerCase().includes("</body>")) repaired += "\n</body>";
+    if (!repaired.toLowerCase().includes("</html>")) repaired += "\n</html>";
+    if (isValidWebsiteHtml(repaired)) {
+      return repaired;
+    }
+  }
+
+  return null;
 }
 
 // High quality fallback landing page generator in case AI keys are not yet configured or rate limited
 export function generateFallbackTemplate(lead: Lead, baseDomain: string): string {
+  const businessName = getLeadDisplayName(lead);
   const issuesList = (lead.seoIssues && lead.seoIssues.length > 0)
-    ? lead.seoIssues.map(iss => `<span class="inline-block bg-red-500/10 border border-red-500/20 text-red-300 text-xs px-3 py-1 rounded-full mr-2 mb-2 font-medium">✓ Resolved: ${iss}</span>`).join('')
+    ? lead.seoIssues.map(iss => `<span class="inline-block bg-red-500/10 border border-red-500/20 text-red-300 text-xs px-3 py-1 rounded-full mr-2 mb-2 font-medium">✓ Resolved: ${iss}</span>`).join("")
     : '<span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs px-3 py-1 rounded-full mr-2 mb-2 font-medium">✓ 100/100 Mobile Speed & SEO Optimized</span>';
 
   return `<!DOCTYPE html>
@@ -58,9 +142,9 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${lead.name} | Modern Experience & Services</title>
+  <title>${businessName} | Modern Experience & Services</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -68,7 +152,7 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Outfit', 'sans-serif'],
+            sans: ["Outfit", "sans-serif"],
           }
         }
       }
@@ -78,7 +162,7 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
 <body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-purple-600 selection:text-white">
   <!-- Top Notification Ribbon -->
   <div class="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 text-xs py-2 px-4 text-center font-medium border-b border-purple-500/20">
-    ⚡ Concept Redesign Preview prepared specifically for <strong class="text-purple-300">${lead.name}</strong> • Ultra-Fast, Mobile-First UX
+    ⚡ Concept Redesign Preview prepared specifically for <strong class="text-purple-300">${businessName}</strong> • Ultra-Fast, Mobile-First UX
   </div>
 
   <!-- Header / Navigation -->
@@ -86,11 +170,11 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
     <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
       <div class="flex items-center space-x-3">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">
-          ${lead.name.substring(0, 1)}
+          ${businessName.substring(0, 1)}
         </div>
         <div>
-          <span class="font-bold text-xl tracking-tight text-white block leading-tight">${lead.name}</span>
-          <span class="text-xs text-purple-400 font-medium">${lead.category || 'Professional Services'}</span>
+          <span class="font-bold text-xl tracking-tight text-white block leading-tight">${businessName}</span>
+          <span class="text-xs text-purple-400 font-medium">${lead.category || "Professional Services"}</span>
         </div>
       </div>
       <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-300">
@@ -100,7 +184,7 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
         <a href="#contact" class="hover:text-purple-400 transition">Contact</a>
       </nav>
       <div class="flex items-center space-x-4">
-        ${lead.phone ? `<a href="tel:${lead.phone}" class="text-sm font-semibold text-slate-300 hover:text-white hidden sm:block">${lead.phone}</a>` : ''}
+        ${lead.phone && !lead.phone.toLowerCase().includes("category") ? `<a href="tel:${lead.phone}" class="text-sm font-semibold text-slate-300 hover:text-white hidden sm:block">${lead.phone}</a>` : ""}
         <a href="#contact" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-purple-600/30 transition transform hover:-translate-y-0.5">
           Get Started
         </a>
@@ -116,7 +200,7 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
         ★ Premium Client Demo Concept
       </div>
       <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white max-w-4xl mx-auto leading-tight">
-        Elevating Customer Experience For <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400">${lead.name}</span>
+        Elevating Customer Experience For <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400">${businessName}</span>
       </h1>
       <p class="mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
         Engineered for rapid loading, seamless mobile booking, and 5-star customer conversions. Built to outrank competitors and drive direct inquiries.
@@ -138,7 +222,7 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
           <div class="text-xs text-slate-400 mt-1 uppercase font-medium">PageSpeed Score</div>
         </div>
         <div>
-          <div class="text-3xl font-extrabold text-white">${lead.gmbRating ? `${lead.gmbRating}/5` : '5.0★'}</div>
+          <div class="text-3xl font-extrabold text-white">${lead.gmbRating ? `${lead.gmbRating}/5` : "5.0★"}</div>
           <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Customer Rating</div>
         </div>
         <div>
@@ -208,12 +292,12 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
   <!-- Contact & Action Section -->
   <section id="contact" class="py-20 bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800">
     <div class="max-w-4xl mx-auto px-6 text-center">
-      <h2 class="text-3xl sm:text-5xl font-extrabold text-white">Connect With ${lead.name} Today</h2>
+      <h2 class="text-3xl sm:text-5xl font-extrabold text-white">Connect With ${businessName} Today</h2>
       <p class="text-slate-400 mt-4 text-lg">We are here to provide tailored solutions and exceed your expectations.</p>
       
       <div class="mt-8 flex flex-wrap justify-center gap-6 text-slate-300 text-sm">
-        ${lead.phone ? `<div><strong>Phone:</strong> <a href="tel:${lead.phone}" class="text-purple-400 hover:underline">${lead.phone}</a></div>` : ''}
-        ${lead.email ? `<div><strong>Email:</strong> <a href="mailto:${lead.email}" class="text-purple-400 hover:underline">${lead.email}</a></div>` : ''}
+        ${lead.phone && !lead.phone.toLowerCase().includes("category") ? `<div><strong>Phone:</strong> <a href="tel:${lead.phone}" class="text-purple-400 hover:underline">${lead.phone}</a></div>` : ""}
+        ${lead.email && !lead.email.toLowerCase().includes("category") ? `<div><strong>Email:</strong> <a href="mailto:${lead.email}" class="text-purple-400 hover:underline">${lead.email}</a></div>` : ""}
       </div>
 
       <div class="mt-12 p-8 rounded-2xl bg-slate-900/80 border border-slate-800 text-left max-w-lg mx-auto shadow-2xl">
@@ -241,7 +325,7 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
   <!-- Footer -->
   <footer class="border-t border-slate-900 py-10 text-center text-slate-500 text-xs">
     <div class="max-w-7xl mx-auto px-6">
-      <p>&copy; ${new Date().getFullYear()} ${lead.name}. Concept Redesign Preview by Mode Webhost & Digital Creations.</p>
+      <p>&copy; ${new Date().getFullYear()} ${businessName}. Concept Redesign Preview by Mode Webhost & Digital Creations.</p>
     </div>
   </footer>
 </body>
@@ -249,59 +333,67 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
 }
 
 export async function generateWebsiteHtml(lead: Lead, settings: Settings): Promise<string> {
-  const provider = settings.aiProvider || 'claude';
-  const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
-    .replace(/^https?:\/\//, '')
-    .replace(/\/$/, '')
-    .replace(/^(\*+\.?)*/, '')
-    .replace(/[*]/g, '')
+  const provider = settings.aiProvider || "claude";
+  const baseDomain = (settings.baseDomain || "demo.modedigicreations.com")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "")
+    .replace(/^(\**\.?)*\//, "")
+    .replace(/[*]/g, "")
     .trim();
 
+  const businessName = getLeadDisplayName(lead);
   const leadContext = `
-Business Name: ${lead.name}
-Category/Niche: ${lead.category || 'Local Business'}
-Current Website: ${lead.website || 'None'}
-Phone Number: ${lead.phone || 'N/A'}
-Google Review Rating: ${lead.gmbRating ? `${lead.gmbRating}/5.0` : '4.9/5.0'}
-Known Technical / SEO / Performance Weaknesses to Solve: ${lead.seoIssues && lead.seoIssues.length > 0 ? lead.seoIssues.join(', ') : 'Slow load speed, outdated mobile layout, weak call-to-action'}
+Business Name: ${businessName}
+Category/Niche: ${lead.category || "Local Business"}
+Current Website: ${lead.website || "None"}
+Phone Number: ${lead.phone || "N/A"}
+Google Review Rating: ${lead.gmbRating ? `${lead.gmbRating}/5.0` : "4.9/5.0"}
+Known Technical / SEO / Performance Weaknesses to Solve: ${lead.seoIssues && lead.seoIssues.length > 0 ? lead.seoIssues.join(", ") : "Slow load speed, outdated mobile layout, weak call-to-action"}
 Crawled Business Details / Offerings:
-${lead.crawledText || 'No existing website crawled. Tailor directly to the business name and niche.'}
+${lead.crawledText || "No existing website crawled. Tailor directly to the business name and niche."}
   `.trim();
 
-  const systemPrompt = settings.websitePromptTemplate || `You are an elite web designer and conversion optimization engineer.
+  const defaultSystemPrompt = `You are an elite web designer and conversion optimization engineer.
 Build a stunning, modern, high-converting, mobile-responsive single-page website for this business.
-Output ONLY raw, complete HTML5 code with Tailwind CSS CDN and Google Fonts. Do not include markdown code fences or conversational text.`;
+CRITICAL FORMAT & DESIGN RULES:
+1. Output ONLY raw, complete HTML5 code starting with <!DOCTYPE html> and ending with </html>. Do not include markdown code fences or conversational text.
+2. Styling MUST use Tailwind CSS CDN (<script src="https://cdn.tailwindcss.com"></script>) and Tailwind utility classes directly in elements.
+3. DO NOT write extensive custom CSS in <style> tags (keep any <style> under 30 lines for simple keyframe animations only).
+4. The HTML document MUST be completely generated with all sections fully closed before ending with </body></html>.
+5. Include: sticky navigation header, hero section with compelling CTA, services/features grid, audit fixes proof section, customer testimonials, contact/lead form, and footer.`;
+
+  const systemPrompt = settings.websitePromptTemplate?.trim() || defaultSystemPrompt;
 
   const userPrompt = `
 Here is the business information:
 ${leadContext}
 
-Generate a complete, ready-to-render, production-grade landing page HTML for this business. 
-Address the specific weaknesses highlighted in their audit. Make it look extremely modern, trustworthy, and conversion-optimized.
-Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
+Generate a complete, fully finished, ready-to-render single-page landing page HTML for this business.
+Address the specific weaknesses highlighted in their audit. Make it look extremely modern, trustworthy, and conversion-optimized using Tailwind CSS utility classes.
+Output ONLY valid, complete HTML starting with <!DOCTYPE html> and ending with </html>. Do NOT stop mid-way.
   `.trim();
 
   // Try AI generation
-  if (provider === 'gemini') {
+  if (provider === "gemini") {
     const apiKey = settings.geminiApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      console.warn('[Website Builder] Gemini API key not provided. Using responsive fallback template.');
+      console.warn("[Website Builder] Gemini API key not provided. Using responsive fallback template.");
       return generateFallbackTemplate(lead, baseDomain);
     }
 
     try {
       const cleanKey = apiKey.trim();
       const genAI = new GoogleGenerativeAI(cleanKey);
-      const requestedModel = settings.geminiModel || 'gemini-2.5-flash';
+      const requestedModel = settings.geminiModel || "gemini-2.5-flash";
       const candidateModels = Array.from(new Set([
         requestedModel,
-        'gemini-2.5-flash',
-        'gemini-2.5-pro',
-        'gemini-2.0-flash',
-        'gemini-1.5-flash',
-        'gemini-1.5-pro',
-        'gemini-3.8-flash',
-        'gemini-3.6-flash'
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash"
       ]));
 
       for (const mName of candidateModels) {
@@ -311,15 +403,18 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
             systemInstruction: systemPrompt
           });
           const result = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            contents: [{ role: "user", parts: [{ text: userPrompt }] }],
             generationConfig: {
-              maxOutputTokens: 4096,
+              maxOutputTokens: 8192,
               temperature: 0.7
             }
           });
           const text = result?.response?.text();
           if (text) {
-            return sanitizeHtmlOutput(text);
+            const sanitized = sanitizeHtmlOutput(text);
+            if (sanitized && isValidWebsiteHtml(sanitized)) {
+              return sanitized;
+            }
           }
         } catch (mErr: any) {
           console.warn(`[Website Builder] Model ${mName} attempt failed: ${mErr.message}. Trying next candidate...`);
@@ -328,25 +423,25 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
 
       return generateFallbackTemplate(lead, baseDomain);
     } catch (err: any) {
-      console.error('[Website Builder] Gemini generation error:', err.message);
+      console.error("[Website Builder] Gemini generation error:", err.message);
       return generateFallbackTemplate(lead, baseDomain);
     }
-  } else if (provider === 'openai') {
+  } else if (provider === "openai") {
     const apiKey = settings.openaiApiKey || process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.warn('[Website Builder] OpenAI API key not provided. Using responsive fallback template.');
+      console.warn("[Website Builder] OpenAI API key not provided. Using responsive fallback template.");
       return generateFallbackTemplate(lead, baseDomain);
     }
 
     try {
-      const modelName = settings.openaiModel || 'gpt-4o';
-      const isReasoning = modelName.startsWith('o1') || modelName.startsWith('o3');
+      const modelName = settings.openaiModel || "gpt-4o";
+      const isReasoning = modelName.startsWith("o1") || modelName.startsWith("o3");
 
       const messages: any[] = isReasoning
-        ? [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }]
+        ? [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}` }]
         : [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
           ];
 
       const payload: any = {
@@ -355,68 +450,74 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
       };
 
       if (isReasoning) {
-        payload.max_completion_tokens = 4096;
+        payload.max_completion_tokens = 8192;
       } else {
-        payload.max_tokens = 4096;
+        payload.max_tokens = 8192;
         payload.temperature = 0.7;
       }
 
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', payload, {
+      const response = await axios.post("https://api.openai.com/v1/chat/completions", payload, {
         headers: {
-          'Authorization': `Bearer ${apiKey.trim()}`,
-          'Content-Type': 'application/json'
+          "Authorization": `Bearer ${apiKey.trim()}`,
+          "Content-Type": "application/json"
         },
         timeout: 60000
       });
 
       if (response.data?.choices?.[0]?.message?.content) {
-        return sanitizeHtmlOutput(response.data.choices[0].message.content);
+        const sanitized = sanitizeHtmlOutput(response.data.choices[0].message.content);
+        if (sanitized && isValidWebsiteHtml(sanitized)) {
+          return sanitized;
+        }
       }
       return generateFallbackTemplate(lead, baseDomain);
     } catch (err: any) {
-      console.error('[Website Builder] OpenAI generation error:', err.response?.data?.error?.message || err.message);
+      console.error("[Website Builder] OpenAI generation error:", err.response?.data?.error?.message || err.message);
       return generateFallbackTemplate(lead, baseDomain);
     }
-  } else if (provider === 'deepseek') {
+  } else if (provider === "deepseek") {
     const apiKey = settings.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
-      console.warn('[Website Builder] DeepSeek API key not provided. Using responsive fallback template.');
+      console.warn("[Website Builder] DeepSeek API key not provided. Using responsive fallback template.");
       return generateFallbackTemplate(lead, baseDomain);
     }
 
     try {
-      const modelName = settings.deepseekModel || 'deepseek-chat';
-      const isReasoner = modelName === 'deepseek-reasoner';
+      const modelName = settings.deepseekModel || "deepseek-chat";
+      const isReasoner = modelName === "deepseek-reasoner";
 
-      const response = await axios.post('https://api.deepseek.com/chat/completions', {
+      const response = await axios.post("https://api.deepseek.com/chat/completions", {
         model: modelName,
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
         ],
-        max_tokens: 3500,
+        max_tokens: 8000,
         ...(isReasoner ? {} : { temperature: 0.7 })
       }, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
         },
         timeout: 60000
       });
 
       if (response.data?.choices?.[0]?.message?.content) {
-        return sanitizeHtmlOutput(response.data.choices[0].message.content);
+        const sanitized = sanitizeHtmlOutput(response.data.choices[0].message.content);
+        if (sanitized && isValidWebsiteHtml(sanitized)) {
+          return sanitized;
+        }
       }
       return generateFallbackTemplate(lead, baseDomain);
     } catch (err: any) {
-      console.error('[Website Builder] DeepSeek generation error:', err.message);
+      console.error("[Website Builder] DeepSeek generation error:", err.message);
       return generateFallbackTemplate(lead, baseDomain);
     }
   } else {
     // Claude
     const apiKey = settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      console.warn('[Website Builder] Anthropic API key not provided. Using responsive fallback template.');
+      console.warn("[Website Builder] Anthropic API key not provided. Using responsive fallback template.");
       return generateFallbackTemplate(lead, baseDomain);
     }
 
@@ -424,34 +525,37 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
       const workspaceId = settings.anthropicWorkspaceId?.trim();
       const anthropic = new Anthropic({ 
         apiKey,
-        defaultHeaders: workspaceId ? { 'anthropic-workspace-id': workspaceId } : undefined
+        defaultHeaders: workspaceId ? { "anthropic-workspace-id": workspaceId } : undefined
       });
-      const requestOptions = workspaceId ? { headers: { 'anthropic-workspace-id': workspaceId } } : undefined;
-      const requestedModel = settings.anthropicModel || 'claude-haiku-4-5-20251001';
+      const requestOptions = workspaceId ? { headers: { "anthropic-workspace-id": workspaceId } } : undefined;
+      const requestedModel = settings.anthropicModel || "claude-haiku-4-5-20251001";
       const candidateModels = Array.from(new Set([
         requestedModel,
-        'claude-haiku-4-5-20251001',
-        'claude-3-5-sonnet-20241022',
-        'claude-3-5-haiku-20241022',
-        'claude-3-haiku-20240307',
-        'claude-3-7-sonnet-20250219'
+        "claude-haiku-4-5-20251001",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-haiku-20241022",
+        "claude-3-haiku-20240307",
+        "claude-3-7-sonnet-20250219"
       ]));
 
       for (const mName of candidateModels) {
         try {
           const message = await anthropic.messages.create({
             model: mName,
-            max_tokens: 3500,
+            max_tokens: 8192,
             temperature: 0.7,
             system: systemPrompt,
             messages: [
-              { role: 'user', content: userPrompt }
+              { role: "user", content: userPrompt }
             ]
           }, requestOptions);
 
           const content = message.content[0];
-          if (content.type === 'text') {
-            return sanitizeHtmlOutput(content.text);
+          if (content.type === "text") {
+            const sanitized = sanitizeHtmlOutput(content.text);
+            if (sanitized && isValidWebsiteHtml(sanitized)) {
+              return sanitized;
+            }
           }
         } catch (mErr: any) {
           console.warn(`[Website Builder] Claude model ${mName} attempt failed: ${mErr.message}. Trying next candidate...`);
@@ -459,7 +563,7 @@ Output ONLY valid HTML starting with <!DOCTYPE html> and ending with </html>.
       }
       return generateFallbackTemplate(lead, baseDomain);
     } catch (err: any) {
-      console.error('[Website Builder] Claude generation error:', err.message);
+      console.error("[Website Builder] Claude generation error:", err.message);
       return generateFallbackTemplate(lead, baseDomain);
     }
   }

@@ -13,7 +13,7 @@ import { sendColdEmail } from './gmail.js';
 import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl } from './whatsapp.js';
 import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
 import { getSitesDir } from './hosting/wildcardAdapter.js';
-import { generateWebsiteHtml } from './siteBuilder.js';
+import { generateWebsiteHtml, isValidWebsiteHtml, generateFallbackTemplate, getLeadDisplayName } from './siteBuilder.js';
 import { getLeadPreviewUrl, sanitizeDemoUrl, getPreviewBaseUrl } from './previewUrl.js';
 
 import fs from 'fs';
@@ -217,6 +217,17 @@ app.use((req, res, next) => {
       if (fs.existsSync(directDiskPath)) {
         try { html = fs.readFileSync(directDiskPath, 'utf-8'); } catch (_) {}
       }
+    }
+
+    if (lead && (!html || !isValidWebsiteHtml(html))) {
+      const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
+        .replace(/^https?:\/\//, '')
+        .replace(/\/$/, '')
+        .replace(/^(\*+\.?)*/, '')
+        .replace(/[*]/g, '')
+        .trim();
+      html = generateFallbackTemplate(lead, baseDomain);
+      try { db.updateLead(lead.id, { demoSiteHtml: html }); } catch (_) {}
     }
 
     if (html) {
@@ -851,14 +862,35 @@ app.get('/api/leads/:id/site-preview', (req, res) => {
       }
     }
 
-    if (html) {
-      return res.send(html);
+    if (!html || !isValidWebsiteHtml(html)) {
+      console.log(`[Site Preview API] Lead ${lead.id} HTML is empty, truncated, or invalid. Auto-repairing with responsive fallback.`);
+      const settings = db.getSettings();
+      const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
+        .replace(/^https?:\/\//, '')
+        .replace(/\/$/, '')
+        .replace(/^(\*+\.?)*/, '')
+        .replace(/[*]/g, '')
+        .trim();
+      html = generateFallbackTemplate(lead, baseDomain);
+      try {
+        db.updateLead(lead.id, { demoSiteHtml: html });
+      } catch (err: any) {}
     }
 
-    res.send('<!DOCTYPE html><html><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>No demo website generated for this lead yet.</h3></body></html>');
+    return res.send(html);
   } catch (error: any) {
     res.status(500).send(`Preview error: ${error.message}`);
   }
+});
+
+// Route /demo to first lead with demo or home
+app.get('/demo', (req, res) => {
+  const leads = db.getLeads();
+  const leadWithDemo = leads.find(l => l.demoSiteHtml || l.demoSiteUrl);
+  if (leadWithDemo) {
+    return res.redirect(`/demo/${leadWithDemo.id}`);
+  }
+  return res.redirect('/');
 });
 
 // Direct full-screen live demo site preview route
@@ -884,6 +916,24 @@ app.get('/demo/:subdomainOrId', (req, res) => {
       const directDiskPath = path.join(getSitesDir(), param, 'index.html');
       if (fs.existsSync(directDiskPath)) {
         try { html = fs.readFileSync(directDiskPath, 'utf-8'); } catch (_) {}
+      }
+    }
+
+    // Auto-repair if lead exists and html is empty, truncated or invalid
+    if (lead && (!html || !isValidWebsiteHtml(html))) {
+      console.log(`[Demo Preview] Lead ${lead.id} HTML is empty, truncated, or invalid. Auto-repairing with high-converting responsive template.`);
+      const settings = db.getSettings();
+      const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
+        .replace(/^https?:\/\//, '')
+        .replace(/\/$/, '')
+        .replace(/^(\*+\.?)*/, '')
+        .replace(/[*]/g, '')
+        .trim();
+      html = generateFallbackTemplate(lead, baseDomain);
+      try {
+        db.updateLead(lead.id, { demoSiteHtml: html });
+      } catch (err: any) {
+        console.warn(`[Demo Preview] Failed to persist repaired HTML for ${lead.id}:`, err.message);
       }
     }
 
