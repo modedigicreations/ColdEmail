@@ -112,6 +112,39 @@ export function resolveTemplateTokens(text: string, lead: any, demoUrl?: string)
     .replace(/\{\{\s*demoSiteUrl\s*\}\}/gi, cleanDemoUrl);
 }
 
+function resolveLeadSubdomainFromHost(rawHost: string, settings: any, leads: any[]): string {
+  const normalizedHost = (rawHost || '').split(':')[0].toLowerCase().trim();
+  if (!normalizedHost) return '';
+
+  const baseDomain = (settings?.baseDomain || 'demo.modedigicreations.com')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/$/, '')
+    .replace(/^\*+\./, '')
+    .replace(/[*]/g, '')
+    .trim()
+    .toLowerCase();
+
+  if (normalizedHost.endsWith(`.${baseDomain}`)) {
+    return normalizedHost.replace(`.${baseDomain}`, '').trim();
+  }
+
+  if (normalizedHost.endsWith('.localhost')) {
+    return normalizedHost.replace('.localhost', '').trim();
+  }
+
+  const hostParts = normalizedHost.split('.');
+  if (hostParts.length > 2) {
+    const firstLabel = hostParts[0]?.trim();
+    const isWildcardHost = firstLabel && firstLabel !== 'www' && firstLabel !== 'api';
+    if (isWildcardHost) {
+      const leadMatch = leads.find(l => l.subdomain === firstLabel || l.id === firstLabel);
+      if (leadMatch) return firstLabel;
+    }
+  }
+
+  return '';
+}
+
 // Virtual Host middleware for custom subdomains (e.g. lead-subdomain.demo.domain.com or lead-subdomain.localhost)
 app.use((req, res, next) => {
   // Pass API requests, static sites, and debug requests to normal routes
@@ -121,22 +154,10 @@ app.use((req, res, next) => {
 
   const rawHost = (req.headers.host || '').split(':')[0].toLowerCase();
   const settings = db.getSettings();
-  const baseDomain = (settings.baseDomain || 'demo.modedigicreations.com')
-    .replace(/^https?:\/\//, '')
-    .replace(/\/$/, '')
-    .replace(/^(\*+\.?)*/, '')
-    .replace(/[*]/g, '')
-    .toLowerCase();
-
-  let targetSubdomain = '';
-  if (rawHost.endsWith(`.${baseDomain}`)) {
-    targetSubdomain = rawHost.replace(`.${baseDomain}`, '').trim();
-  } else if (rawHost.endsWith('.localhost')) {
-    targetSubdomain = rawHost.replace('.localhost', '').trim();
-  }
+  const leads = db.getLeads();
+  const targetSubdomain = resolveLeadSubdomainFromHost(rawHost, settings, leads);
 
   if (targetSubdomain && targetSubdomain !== 'www' && targetSubdomain !== 'api') {
-    const leads = db.getLeads();
     const lead = leads.find(l => l.subdomain === targetSubdomain || l.id === targetSubdomain);
     let html = lead?.demoSiteHtml;
     if (!html && lead?.subdomain) {
