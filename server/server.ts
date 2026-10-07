@@ -14,6 +14,7 @@ import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl } from './whatsa
 import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
 import { getSitesDir } from './hosting/wildcardAdapter.js';
 import { generateWebsiteHtml } from './siteBuilder.js';
+import { getLeadPreviewUrl, sanitizeDemoUrl, getPreviewBaseUrl } from './previewUrl.js';
 
 import fs from 'fs';
 import path from 'path';
@@ -31,6 +32,51 @@ app.use(cors());
 app.use(express.json());
 app.use('/debug', express.static(path.join(__dirname, 'debug')));
 app.use('/sites', express.static(getSitesDir()));
+
+// Serve frontend React application from client/dist (for Render & production deployments)
+const clientDistCandidates = [
+  path.join(__dirname, "..", "client", "dist"),
+  path.join(process.cwd(), "..", "client", "dist"),
+  path.join(process.cwd(), "client", "dist"),
+  path.join(__dirname, "public", "client"),
+  path.join(process.cwd(), "public", "client"),
+];
+const clientDistPath = clientDistCandidates.find(p => fs.existsSync(path.join(p, "index.html")));
+
+if (clientDistPath) {
+  console.log(`[Static Frontend] Serving client SPA from: ${clientDistPath}`);
+  app.use(express.static(clientDistPath));
+} else {
+  // If client/dist is not built, provide a clean, branded landing portal at root instead of Express 404
+  app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adeola &amp; Mode OS • Agency Suite</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #f8fafc; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #131b2e; border: 1px solid #1e293b; border-radius: 16px; padding: 40px; max-width: 560px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
+    .badge { display: inline-block; background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+    h1 { margin: 0 0 12px; font-size: 28px; background: linear-gradient(135deg, #c084fc, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+    .status { display: flex; align-items: center; justify-content: center; gap: 8px; color: #34d399; font-size: 13px; font-weight: 600; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 10px #34d399; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Adeola &amp; Mode OS</div>
+    <h1>ColdReach Agency Engine</h1>
+    <p>The outreach engine and website preview gateway is live and running on this domain. Demo redesign links sent to prospects are active at <code>/demo/:leadId</code>.</p>
+    <div class="status"><span class="dot"></span> Server &amp; Gateway Operational</div>
+  </div>
+</body>
+</html>`);
+  });
+}
 
 export function cleanAiErrorMessage(error: any): string {
   if (!error) return "Unknown error occurred";
@@ -98,9 +144,9 @@ export function cleanAiErrorMessage(error: any): string {
   return msg;
 }
 
-export function resolveTemplateTokens(text: string, lead: any, demoUrl?: string): string {
+export function resolveTemplateTokens(text: string, lead: any, demoUrl?: string, settings?: any): string {
   if (!text) return '';
-  const cleanDemoUrl = (demoUrl || lead?.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
+  const cleanDemoUrl = sanitizeDemoUrl(demoUrl || lead?.demoSiteUrl, lead, settings);
   return text
     .replace(/\{\{\s*Business Name\s*\}\}/gi, lead?.name || '')
     .replace(/\{\{\s*Category\s*\}\}/gi, lead?.category || 'your business')
@@ -402,11 +448,12 @@ app.post('/api/leads/automate-all', (req, res) => {
           db.updateLead(currentLead.id, { siteStatus: 'subdomain_created' });
           const subResult = await createLeadSubdomain(currentLead, settings);
           if (subResult.success) {
+            const previewUrl = getLeadPreviewUrl(currentLead, settings);
             db.updateLead(currentLead.id, { 
-              subdomain: subResult.subdomain, 
-              demoSiteUrl: subResult.url 
+              subdomain: subResult.subdomain,
+              demoSiteUrl: previewUrl || subResult.url
             });
-            console.log(`[Automation] Subdomain ready: ${subResult.url}`);
+            console.log(`[Automation] Subdomain ready: ${subResult.url} | Preview link: ${previewUrl || subResult.url}`);
           }
           currentLead = db.getLead(currentLead.id)!;
 
@@ -421,12 +468,13 @@ app.post('/api/leads/automate-all', (req, res) => {
           if (currentLead.subdomain) {
             const deployRes = await deployLeadWebsite(currentLead.subdomain, siteHtml, settings);
             if (deployRes.success) {
+              const previewUrl = getLeadPreviewUrl(currentLead, settings);
               db.updateLead(currentLead.id, { 
                 siteStatus: 'deployed', 
                 status: 'site_ready',
-                demoSiteUrl: deployRes.url
+                demoSiteUrl: previewUrl || deployRes.url
               });
-              console.log(`[Automation] Website deployed successfully: ${deployRes.url}`);
+              console.log(`[Automation] Website deployed successfully: ${previewUrl || deployRes.url}`);
             }
           }
           currentLead = db.getLead(currentLead.id)!;
@@ -450,10 +498,10 @@ app.post('/api/leads/automate-all', (req, res) => {
           currentLead = db.getLead(currentLead.id)!;
           if (currentLead.email) {
             console.log(`[Automation] Sending outreach email to: ${currentLead.email}`);
-            const cleanDemoUrl = (currentLead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
+            const cleanDemoUrl = sanitizeDemoUrl(currentLead.demoSiteUrl, currentLead, settings);
             const rawSubject = subject || `Website Redesign Demo for ${currentLead.name}`;
-            const resolvedSubject = resolveTemplateTokens(rawSubject, currentLead, cleanDemoUrl);
-            const resolvedBody = resolveTemplateTokens(draft, currentLead, cleanDemoUrl);
+            const resolvedSubject = resolveTemplateTokens(rawSubject, currentLead, cleanDemoUrl, settings);
+            const resolvedBody = resolveTemplateTokens(draft, currentLead, cleanDemoUrl, settings);
             
             await sendColdEmail({
               to: currentLead.email,
@@ -617,10 +665,10 @@ app.post('/api/leads/:id/send', async (req, res) => {
 
     db.updateLead(lead.id, { status: 'sending', error: undefined });
 
-    const cleanDemoUrl = (lead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
+    const cleanDemoUrl = sanitizeDemoUrl(lead.demoSiteUrl, lead, settings);
     const rawSubject = subject || `Website Redesign Demo for ${lead.name}`;
-    const resolvedSubject = resolveTemplateTokens(rawSubject, lead, cleanDemoUrl);
-    const resolvedBody = resolveTemplateTokens(emailBody, lead, cleanDemoUrl);
+    const resolvedSubject = resolveTemplateTokens(rawSubject, lead, cleanDemoUrl, settings);
+    const resolvedBody = resolveTemplateTokens(emailBody, lead, cleanDemoUrl, settings);
 
     await sendColdEmail({
       to: lead.email,
@@ -661,7 +709,7 @@ app.post('/api/leads/:id/create-subdomain', async (req, res) => {
     if (result.success) {
       const updated = db.updateLead(lead.id, {
         subdomain: result.subdomain,
-        demoSiteUrl: result.url,
+        demoSiteUrl: getLeadPreviewUrl(lead, settings) || result.url,
         siteStatus: 'subdomain_created',
         error: undefined
       });
@@ -727,7 +775,7 @@ app.post('/api/leads/:id/deploy-site', async (req, res) => {
     if (result.success) {
       const updated = db.updateLead(lead.id, {
         subdomain,
-        demoSiteUrl: result.url,
+        demoSiteUrl: getLeadPreviewUrl(lead, settings) || result.url,
         siteStatus: 'deployed',
         status: 'site_ready',
         error: undefined
@@ -771,7 +819,7 @@ app.post('/api/leads/:id/build-and-deploy', async (req, res) => {
     const updated = db.updateLead(lead.id, {
       subdomain,
       demoSiteHtml: html,
-      demoSiteUrl: deployRes.url,
+      demoSiteUrl: getLeadPreviewUrl(lead, settings) || deployRes.url,
       siteStatus: 'deployed',
       status: 'site_ready',
       error: undefined
@@ -816,9 +864,15 @@ app.get('/api/leads/:id/site-preview', (req, res) => {
 // Direct full-screen live demo site preview route
 app.get('/demo/:subdomainOrId', (req, res) => {
   try {
-    const param = req.params.subdomainOrId;
+    const rawParam = (req.params.subdomainOrId || '').trim();
+    const param = rawParam.replace(/\.html$/i, '');
     const leads = db.getLeads();
-    const lead = leads.find(l => l.id === param || l.subdomain === param);
+    const lead = leads.find(l => 
+      l.id === param || 
+      l.subdomain === param ||
+      l.id.toLowerCase() === param.toLowerCase() ||
+      (l.subdomain && l.subdomain.toLowerCase() === param.toLowerCase())
+    );
     let html = lead?.demoSiteHtml;
     if (!html && lead?.subdomain) {
       const diskPath = path.join(getSitesDir(), lead.subdomain, 'index.html');
@@ -835,7 +889,7 @@ app.get('/demo/:subdomainOrId', (req, res) => {
 
     if (!html) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return res.status(404).send('<!DOCTYPE html><html><body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><h3>Demo website not found or still generating.</h3></body></html>');
+      return res.status(404).send('<!DOCTYPE html><html><body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><h2>Demo Preview Not Found</h2><p style="color:#64748b;">The demo redesign for this business is either still generating or was moved.</p></div></body></html>');
     }
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -1568,6 +1622,35 @@ try {
   console.log(`[Pipeline Engine] Initialized: ${initSync.dealsCount} pipeline deals active across ${initSync.totalLeads} leads.`);
 } catch (syncErr: any) {
   console.warn('[Pipeline Engine] Initial sync warning:', syncErr.message);
+}
+
+// Auto-sanitize existing lead demoSiteUrls on server initialization
+try {
+  const leads = db.getLeads();
+  const settings = db.getSettings();
+  let fixedCount = 0;
+  leads.forEach(l => {
+    if (l.demoSiteUrl && !l.demoSiteUrl.includes('/demo/')) {
+      const fixedUrl = getLeadPreviewUrl(l, settings);
+      db.updateLead(l.id, { demoSiteUrl: fixedUrl });
+      fixedCount++;
+    }
+  });
+  if (fixedCount > 0) {
+    console.log(`[Migration] Auto-sanitized ${fixedCount} lead demoSiteUrls to direct preview format.`);
+  }
+} catch (e: any) {
+  console.warn('[Migration] Notice during demoSiteUrl check:', e.message);
+}
+
+// Client SPA route fallback for browser page refreshes
+if (clientDistPath) {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/demo') || req.path.startsWith('/sites') || req.path.startsWith('/debug')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
 }
 
 app.listen(PORT, () => {

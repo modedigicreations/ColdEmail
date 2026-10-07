@@ -1702,13 +1702,13 @@ export default function App() {
               )}
             </div>
 
-            {/* 2. Hosting Dashboard & Subdomain Settings */}
+            {/* 2. Hosting Dashboard & Preview Settings */}
             <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '20px', marginBottom: '20px' }}>
               <h3 style={{ fontSize: '16px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Server size={18} color="var(--info)" /> Hosting Dashboard & Subdomain Provisioner
+                <Server size={18} color="var(--info)" /> Hosting Dashboard & Preview Deployment
               </h3>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Each lead will receive a custom demo website hosted on a personalized subdomain (e.g. <code>lead-name.demo.yourdomain.com</code>).
+                Each lead will receive a temporary live preview link (e.g. <code>https://your-app-url/demo/lead-id</code>) instead of depending on a custom subdomain or wildcard DNS setup.
               </p>
 
               <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -1719,9 +1719,9 @@ export default function App() {
                     value={settings.hostingProvider || 'wildcard'}
                     onChange={e => setSettings({ ...settings, hostingProvider: e.target.value as any })}
                   >
-                    <option value="wildcard">Wildcard Subdomain & Local Static (Fastest / Recommended)</option>
-                    <option value="cpanel">cPanel / WHM API (Auto UAPI Subdomain & File Upload)</option>
-                    <option value="cloudflare">Cloudflare DNS API (Automated CNAME records)</option>
+                    <option value="wildcard">Legacy Wildcard Subdomain & Local Static</option>
+                    <option value="cpanel">cPanel / WHM API (Legacy subdomain & file upload)</option>
+                    <option value="cloudflare">Cloudflare DNS API (Legacy custom DNS records)</option>
                   </select>
                 </div>
                 <div>
@@ -1937,7 +1937,7 @@ export default function App() {
                 onChange={e => setSettings({ ...settings, systemPrompt: e.target.value })}
               />
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Tip: The AI automatically embeds the live demo subdomain link (<code>{"{{Demo Website}}"}</code>) directly into the email body.
+                Tip: The AI automatically embeds the live demo preview link (<code>{"{{Demo Website}}"}</code>) directly into the email body.
               </p>
             </div>
 
@@ -2358,7 +2358,7 @@ export default function App() {
                         onClick={startBulkSiteBuilding}
                         disabled={leads.length === 0}
                         style={{ borderColor: '#c084fc', color: '#c084fc' }}
-                        title="Generate and deploy subdomains & demo websites for all leads"
+                        title="Generate demo websites and temporary preview links for all leads"
                       >
                         <Globe size={14} /> Bulk Build Websites
                       </button>
@@ -2774,9 +2774,9 @@ export default function App() {
                   {selectedLead.demoSiteUrl && (
                     <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
                       <div>
-                        <strong>Subdomain:</strong>{' '}
+                        <strong>Temporary Preview Link:</strong>{' '}
                         <a href={selectedLead.demoSiteUrl} target="_blank" rel="noreferrer" style={{ color: '#c084fc', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
-                          {selectedLead.subdomain} <ExternalLink size={12} />
+                          {selectedLead.subdomain || 'preview'} <ExternalLink size={12} />
                         </a>
                       </div>
                       {selectedLead.demoSiteHtml && (

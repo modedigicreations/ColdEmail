@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import { Lead, Settings } from './db.js';
 import { generateFallbackWhatsAppPitch } from './whatsapp.js';
+import { sanitizeDemoUrl } from './previewUrl.js';
 
 export function stripAsterisksFromUrls(text: string): string {
   if (!text) return text;
@@ -19,7 +20,7 @@ export function stripAsterisksFromUrls(text: string): string {
 
 export async function generateColdEmail(lead: Lead, settings: Settings): Promise<string> {
   const provider = settings.aiProvider || 'claude';
-  const cleanDemoUrl = (lead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
+  const cleanDemoUrl = sanitizeDemoUrl(lead.demoSiteUrl, lead, settings);
   
   const demoLinkText = cleanDemoUrl 
     ? `Live Custom Demo Website Built For Them: ${cleanDemoUrl}` 
@@ -242,7 +243,7 @@ Conclude the email using the provided contact details and email signature. Do no
 
 export async function generateWhatsAppPitch(lead: Lead, settings: Settings): Promise<string> {
   const provider = settings.aiProvider || 'gemini';
-  const cleanDemoUrl = (lead.demoSiteUrl || '').replace(/[*_~`]/g, '').trim();
+  const cleanDemoUrl = sanitizeDemoUrl(lead.demoSiteUrl, lead, settings);
 
   const customPrompt = settings.whatsappPromptTemplate || `You are an elite B2B sales outreach copywriter. Compose a short, punchy, conversational WhatsApp pitch to the business owner or manager.
 Introduce the bespoke, high-converting live demo website redesign we built for their brand (use {{Demo Website}} or {{demoSiteUrl}}).

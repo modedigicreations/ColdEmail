@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc && npx puppeteer browsers install chrome",
+    "build": "tsc && (if [ -d \"../client\" ]; then npm --prefix ../client install --include=dev && npm --prefix ../client run build && mkdir -p public/client && cp -r ../client/dist/* public/client/; fi) && npx puppeteer browsers install chrome",
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts"
   },

@@ -1,3 +1,4 @@
+import { getLeadPreviewUrl } from "../previewUrl.js";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -39,7 +40,7 @@ export class WildcardAdapter implements HostingAdapter {
         .replace(/^(\*+\.?)*/, '')
         .replace(/[*]/g, '')
         .trim();
-      const fullUrl = `https://${cleanSub}.${cleanBase}`;
+      const fullUrl = getLeadPreviewUrl({ id: cleanSub, subdomain: cleanSub }, settings);
 
       return {
         success: true,
@@ -76,7 +77,7 @@ export class WildcardAdapter implements HostingAdapter {
         .replace(/^(\*+\.?)*/, '')
         .replace(/[*]/g, '')
         .trim();
-      const fullUrl = `https://${cleanSub}.${cleanBase}`;
+      const fullUrl = getLeadPreviewUrl({ id: cleanSub, subdomain: cleanSub }, settings);
 
       return {
         success: true,

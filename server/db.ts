@@ -342,14 +342,14 @@ const DEFAULT_SETTINGS: Settings = {
   emailSignature: 'Best regards,\n\n[Your Name]\n[Your Company]\nPhone: [Your Phone]\nEmail: [Your Email]',
   systemPrompt: `You are a cold outreach specialist. Compose a highly personalized, compelling, and professional cold email to the business.
 Reference their specific SEO or Google Business Profile issues (like slow website speed, missing SSL, low ratings) if available.
-Crucially, introduce the brand new, high-converting live demo redesign website we built for them at their personalized subdomain (use {{Demo Website}} or {{demoSiteUrl}}).
+Crucially, introduce the brand new, high-converting live demo redesign website we built for them at their temporary live preview link (use {{Demo Website}} or {{demoSiteUrl}}).
 Keep it brief (under 150 words), conversational, and offer direct value. Do not sound spammy. Use a friendly tone and close with a clear call to action to review the live preview.`,
   whatsappPromptTemplate: `You are an elite B2B sales outreach copywriter. Compose a short, punchy, conversational WhatsApp pitch to the business owner or manager.
-Introduce the bespoke, high-converting live demo website redesign we built for their brand (use {{Demo Website}} or {{demoSiteUrl}}).
+Introduce the bespoke, high-converting live demo website redesign we built for their brand at a temporary live preview link (use {{Demo Website}} or {{demoSiteUrl}}).
 Highlight 1-2 core improvements (e.g. mobile responsiveness, ultra-fast load time, modern design) that their current site lacks.
 Keep it brief (under 60 words). Use natural WhatsApp formatting (*bold* for emphasis, clean spacing, polite emoji like 👋 or 🚀). Offer direct value and invite a quick look.`,
   hostingProvider: 'wildcard',
-  baseDomain: 'demo.modedigicreations.com',
+  baseDomain: 'adeolamedia.co.uk',
   cpanelHost: '',
   cpanelUser: '',
   cpanelApiToken: '',
