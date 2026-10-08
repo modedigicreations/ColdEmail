@@ -10,16 +10,16 @@ import { Lead, Settings } from "./db.js";
 export function isValidWebsiteHtml(html?: string | null): boolean {
   if (!html || typeof html !== "string") return false;
   const trimmed = html.trim();
-  if (trimmed.length < 200) return false;
+  if (trimmed.length < 500) return false;
 
   const lower = trimmed.toLowerCase();
 
-  // Must have a <body> opening tag and a </body> closing tag
-  if (!lower.includes("<body") || !lower.includes("</body>")) {
+  // Must be an HTML document with body
+  if (!lower.includes("<html") || !lower.includes("<body") || !lower.includes("</body>")) {
     return false;
   }
 
-  // Must have balanced <style> tags (an unclosed <style> tag consumes the entire DOM below it as CSS)
+  // Must have balanced <style> tags
   const styleOpens = (lower.match(/<style\b[^>]*>/g) || []).length;
   const styleCloses = (lower.match(/<\/style>/g) || []).length;
   if (styleOpens > styleCloses) {
@@ -31,7 +31,14 @@ export function isValidWebsiteHtml(html?: string | null): boolean {
   if (!bodyMatch) return false;
 
   const bodyContent = bodyMatch[1].replace(/<!--[\s\S]*?-->/g, "").trim();
-  if (bodyContent.length < 100) return false;
+  if (bodyContent.length < 250) return false;
+
+  // Must have real website structural elements (sections/main + header/nav/footer + headings)
+  const hasStructural = lower.includes("<section") || lower.includes("<main") || lower.includes("<header") || lower.includes("<nav");
+  const hasHeadings = lower.includes("<h1") || lower.includes("<h2") || lower.includes("<h3");
+  if (!hasStructural || !hasHeadings) {
+    return false;
+  }
 
   // Verify that the body content is not trapped inside an unclosed style
   if (bodyContent.toLowerCase().includes("<style") && !bodyContent.toLowerCase().includes("</style>")) {
@@ -46,14 +53,35 @@ export function isValidWebsiteHtml(html?: string | null): boolean {
  */
 export function getLeadDisplayName(lead: Lead): string {
   let name = (lead.name || "").trim();
-  if (!name || name.toLowerCase().includes("category (as listed)") || name.toLowerCase().includes("trade / category")) {
+  const isCategoryOrPlaceholder = 
+    !name || 
+    name.includes(";") || 
+    name.toLowerCase().includes("category (as listed)") || 
+    name.toLowerCase().includes("trade / category") ||
+    name.toLowerCase().includes("doors; double glazing");
+
+  if (isCategoryOrPlaceholder) {
     const prevTitle = lead.demoSiteHtml?.match(/<title>([^|<]+)/i)?.[1]?.trim();
-    if (prevTitle && !prevTitle.toLowerCase().includes("category")) {
+    if (prevTitle && !prevTitle.toLowerCase().includes("category") && !prevTitle.includes(";")) {
       return prevTitle;
     }
     if (lead.website && !lead.website.toLowerCase().includes("category")) {
       const cleanWeb = lead.website.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
-      return cleanWeb.charAt(0).toUpperCase() + cleanWeb.slice(1);
+      const domainPart = cleanWeb.split(".")[0];
+      if (domainPart && domainPart.length > 2) {
+        return domainPart.charAt(0).toUpperCase() + domainPart.slice(1);
+      }
+    }
+    if (lead.email && !lead.email.toLowerCase().includes("category")) {
+      const domainPart = lead.email.split("@")[1]?.split(".")[0];
+      if (domainPart && domainPart.length > 2) {
+        return domainPart.charAt(0).toUpperCase() + domainPart.slice(1);
+      }
+    }
+    if (name.includes(";")) {
+      const parts = name.split(/[;,]/).map(p => p.trim()).filter(Boolean);
+      const mainPart = parts.find(p => p.toLowerCase().includes("glazing") || p.toLowerCase().includes("double")) || parts[0];
+      return `${mainPart} Specialists`;
     }
     return "Best of Brain";
   }
@@ -286,27 +314,8 @@ export function sanitizeHtmlOutput(raw: string): string | null {
     }
   }
 
-  // 3. Fallback: Wrap in valid HTML5 structure if fragment
-  if (!cleaned.toLowerCase().includes("<!doctype html") && !cleaned.toLowerCase().includes("<html")) {
-    const wrapped = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Modern Redesign Preview</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-white min-h-screen">
-  ${cleaned}
-</body>
-</html>`;
-    if (isValidWebsiteHtml(wrapped)) {
-      return wrapped;
-    }
-  }
-
-  // 4. If it has <html> and <body>, ensure closing tags if slightly truncated at end
-  if (cleaned.toLowerCase().includes("<body")) {
+  // 3. If it has <html> and <body>, ensure closing tags if slightly truncated at end
+  if (cleaned.toLowerCase().includes("<body") && cleaned.toLowerCase().includes("<html")) {
     let repaired = cleaned;
     if (!repaired.toLowerCase().includes("</body>")) repaired += "\n</body>";
     if (!repaired.toLowerCase().includes("</html>")) repaired += "\n</html>";
@@ -315,12 +324,48 @@ export function sanitizeHtmlOutput(raw: string): string | null {
     }
   }
 
+  // Under NO circumstances wrap a raw text fragment or plugin list in a fake HTML shell
   return null;
 }
 
 // Curated presets for industry-tailored imagery, services, and conversion copy
+
+export function cleanCategoryTitle(rawCategory?: string): string {
+  if (!rawCategory) return "Professional Services";
+  if (rawCategory.includes(";")) {
+    const parts = rawCategory.split(/[;,]/).map(p => p.trim()).filter(Boolean);
+    const main = parts.find(p => p.toLowerCase().includes("glazing") || p.toLowerCase().includes("double")) || parts[0];
+    return main ? `${main} & Specialist Services` : "Professional Services";
+  }
+  return rawCategory.trim();
+}
+
 export function getNichePreset(category?: string) {
   const cat = (category || "").toLowerCase();
+
+  if (cat.includes("glaz") || cat.includes("window") || cat.includes("door") || cat.includes("conservator")) {
+    return {
+      heroImage: "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80",
+      heroBadge: "Bespoke Windows, Doors & Double Glazing Specialists",
+      services: [
+        {
+          title: "Energy-Efficient Double & Triple Glazing",
+          desc: "A-rated thermal insulation windows, acoustic noise reduction glass, and bespoke UPVC or aluminium frames.",
+          points: ["A+ Energy Rated Glass", "Up to 70% Noise Reduction", "10-Year Insurance-Backed Guarantee"]
+        },
+        {
+          title: "Custom Composite & Bifold Doors",
+          desc: "High-security composite entrance doors, aluminium bifold patio doors, and French doors with multi-point locking.",
+          points: ["Ultion High-Security Locks", "Weather-Sealed Precision Fit", "Vast Range of Contemporary Colors"]
+        },
+        {
+          title: "Emergency Glazing Repairs & Misted Units",
+          desc: "Fast glass replacement, cloudy/misted double glazing seal repairs, hinge adjustments, and broken pane replacements.",
+          points: ["Same-Day Emergency Boarding & Repair", "Zero Callout Fee Estimates", "Direct Factory Replacement Glass"]
+        }
+      ]
+    };
+  }
 
   if (cat.includes("aerial") || cat.includes("satellite") || cat.includes("audio") || cat.includes("cinema") || cat.includes("av") || cat.includes("tv")) {
     return {
@@ -470,7 +515,7 @@ export function getNichePreset(category?: string) {
 export function generateFallbackTemplate(lead: Lead, baseDomain: string): string {
   const businessName = getLeadDisplayName(lead);
   const preset = getNichePreset(lead.category);
-  const categoryTitle = lead.category || "Professional Services";
+  const categoryTitle = cleanCategoryTitle(lead.category);
   const phoneFormatted = lead.phone && !lead.phone.toLowerCase().includes("category") ? lead.phone.trim() : "";
   const emailFormatted = lead.email && !lead.email.toLowerCase().includes("category") ? lead.email.trim() : "";
   const ratingFormatted = lead.gmbRating ? `${lead.gmbRating}/5.0` : "5.0/5.0";
@@ -867,7 +912,7 @@ export async function generateWebsiteHtml(lead: Lead, settings: Settings): Promi
 
   const businessName = getLeadDisplayName(lead);
   const preset = getNichePreset(lead.category);
-  const nicheCategory = lead.category || "Professional Services";
+  const nicheCategory = cleanCategoryTitle(lead.category);
   const phoneFormatted = lead.phone && !lead.phone.toLowerCase().includes("category") ? lead.phone.trim() : "N/A";
   const emailFormatted = lead.email && !lead.email.toLowerCase().includes("category") ? lead.email.trim() : "N/A";
 
@@ -950,18 +995,30 @@ CRITICAL DESIGN & VISUAL AESTHETIC DIRECTIVES:
   }
 
   const userPrompt = `
-Here is the business information:
-${leadContext}
+CRITICAL DIRECTIVE: You MUST generate a COMPLETE, FULLY FUNCTIONAL, MULTI-SECTION HTML5 LANDING PAGE for this business.
+DO NOT output a summary, DO NOT output recommendations, DO NOT output a list of WordPress plugins, and DO NOT output conversational text.
+Your entire response must be RAW, RENDERABLE HTML5 starting immediately with <!DOCTYPE html> and ending with </html>.
 
-INSTRUCTIONS:
-Generate a complete, fully finished, ultra-modern single-page landing page HTML for this business.
-- Industry/Niche: ${nicheCategory}
-- Tailor all headlines, services, benefits, and imagery specifically to ${businessName}.
-- Speak directly to their prospective customers with high-converting, professional copywriting.
-- Use high-resolution Unsplash images matching this niche (e.g. ${preset.heroImage}).
-- Style using Tailwind CSS CDN with a sleek, premium dark or modern high-contrast aesthetic.
-- Include the #client-adjustments section for the 48-hour preview review.
-Output ONLY raw, complete HTML starting with <!DOCTYPE html> and ending with </html>. Do not truncate.
+Business Details:
+Business Name: ${businessName}
+Industry / Niche: ${nicheCategory}
+Phone Number: ${phoneFormatted}
+Email Address: ${emailFormatted}
+Customer Rating: ${lead.gmbRating ? `${lead.gmbRating}/5.0` : "4.9/5.0"}
+Hero Image: ${preset.heroImage}
+
+MANDATORY SECTIONS (All 8 sections must be fully written in HTML using Tailwind CSS):
+1. STICKY HEADER: Logo mark, business name (${businessName}), navigation links (Services, Why Us, Reviews, Contact), click-to-call phone pill (${phoneFormatted}), and "Get Free Quote" CTA button.
+2. HERO SECTION: Split layout. Left: niche badge pill, bold headline, 2-sentence value proposition, dual CTA buttons (Get Free Quote & Call Now), and 4 trust indicators. Right: Hero showcase card with <img src="${preset.heroImage}" alt="${businessName}" class="rounded-2xl shadow-2xl ..."> and floating trust badges.
+3. STATS BAR: 4 verified metrics (15+ Years Experience, 100% Guaranteed Workmanship, 5.0★ Rating, <1hr Rapid Response).
+4. FEATURED SERVICES: 3-4 rich cards tailored to ${nicheCategory} with titles, descriptions, checkmark bullet points, and "Inquire" links.
+5. WHY CHOOSE US: 3 value pillars (Transparent Upfront Pricing, Certified Specialists, Written Warranty).
+6. 5-STAR REVIEWS: 3 verified customer feedback cards with 5 gold stars and reviewer names.
+7. CONTACT & ESTIMATE FORM: Direct phone (${phoneFormatted}), email (${emailFormatted}), hours, and an interactive quote request form.
+8. CLIENT 48-HOUR REVIEW SECTION: <section id="client-adjustments"> with notes form for client adjustments.
+9. FOOTER: Clean brand footer with copyright ${new Date().getFullYear()} ${businessName}.
+
+Output ONLY valid, complete HTML starting with <!DOCTYPE html> and ending with </html>.
   `.trim();
 
   // Try AI generation

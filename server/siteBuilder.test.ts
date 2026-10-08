@@ -181,3 +181,51 @@ test("generateFallbackTemplate produces modern, conversion-focused design with n
   assert.ok(html.includes("The ClearVision Aerials Standard"), "Must include why-choose-us section");
   assert.ok(!html.includes("Resolved Audit Weaknesses"), "Must not display awkward audit diagnosis text");
 });
+
+test("sanitizeHtmlOutput and isValidWebsiteHtml reject plain text lists or plugin recommendations", () => {
+  const pluginText = "1. Yoast SEO (Free) - SEO optimization 2. WPForms Lite - Contact forms 3. LiteSpeed Cache - Performance 4. Smush - Image optimization 5. Wordfence Security - Security 6. UpdraftPlus - Backups 7. Google Site Kit - Analytics 8. Cookiebot - GDPR compliance 9. Rank Math (alternative to Yoast) 10. MonsterInsights - Google Analytics integration";
+  
+  // Must return null, not wrap it in a fake HTML document
+  const sanitized = sanitizeHtmlOutput(pluginText);
+  assert.strictEqual(sanitized, null, "Must reject plain text recommendations as invalid website");
+
+  const fakeWrapped = `<!DOCTYPE html><html><body>${pluginText}</body></html>`;
+  assert.strictEqual(isValidWebsiteHtml(fakeWrapped), false, "Must reject text wrapped in body without sections/headers");
+});
+
+test("getLeadDisplayName cleans semicolon-separated categories into proper business names", () => {
+  const lead1: Lead = {
+    id: "lead_glaz",
+    name: "Doors; Double Glazing; Glazing",
+    status: "site_ready"
+  };
+  const displayName = getLeadDisplayName(lead1);
+  assert.strictEqual(displayName, "Double Glazing Specialists");
+  assert.ok(!displayName.includes(";"), "Must not contain raw CSV semicolons");
+
+  const lead2: Lead = {
+    id: "lead_web",
+    name: "Doors; Double Glazing; Glazing",
+    website: "https://www.clearviewglazing.co.uk",
+    status: "site_ready"
+  };
+  assert.strictEqual(getLeadDisplayName(lead2), "Clearviewglazing");
+});
+
+test("generateFallbackTemplate for glazing/doors category generates fully functional website with tailored imagery", () => {
+  const lead: Lead = {
+    id: "lead_glazing",
+    name: "Doors; Double Glazing; Glazing",
+    category: "Doors; Double Glazing; Glazing",
+    phone: "0800 987 6543",
+    status: "site_ready"
+  };
+
+  const html = generateFallbackTemplate(lead, "adeolamedia.co.uk");
+  assert.strictEqual(isValidWebsiteHtml(html), true);
+  assert.ok(html.includes("Double Glazing"), "Must feature double glazing services");
+  assert.ok(html.includes("Bespoke Windows, Doors & Double Glazing Specialists"), "Must use glazing preset badge");
+  assert.ok(html.includes("images.unsplash.com"), "Must embed high-res photo");
+  assert.ok(!html.includes("Yoast"), "Must not contain plugin text");
+  assert.ok(html.includes("0800 987 6543"), "Must include phone number");
+});
