@@ -1874,10 +1874,10 @@ export default function App() {
                   rows={3}
                   value={settings.websitePromptTemplate}
                   onChange={e => setSettings({ ...settings, websitePromptTemplate: e.target.value })}
-                  placeholder="Instructions for ChatGPT / Gemini / Claude / DeepSeek on designing the demo websites..."
+                  placeholder="Instructions for ChatGPT / Gemini / Claude / DeepSeek on designing the demo websites (luxury Tailwind styling, photography, tone, and conversion layout)..."
                 />
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  The AI builds a modern, single-page responsive website addressing each lead's specific SEO and design weaknesses.
+                  The AI builds an ultra-modern, high-converting responsive website with curated niche imagery, verified customer proof, and direct client call-to-actions.
                 </p>
               </div>
             </div>

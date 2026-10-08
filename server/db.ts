@@ -383,16 +383,14 @@ Keep it brief (under 60 words). Use natural WhatsApp formatting (*bold* for emph
   hostingDashboardUrl: '',
   hostingDashboardEmail: '',
   hostingDashboardPass: '',
-  websitePromptTemplate: `You are an elite web designer and conversion rate optimization expert.
-Build a modern, high-converting, mobile-responsive single-page landing page website for this business.
-Incorporate:
-1. Clean, modern aesthetic with Tailwind CSS CDN and Google Fonts (Outfit/Inter).
-2. Engaging Hero section with a strong value proposition, headline, and direct CTA buttons (Call Now, Book Consultation, WhatsApp).
-3. "Why Choose Us" / Services section highlighting what this business offers.
-4. "Modern Web & Mobile Experience" badge/section showcasing that this site is lightning fast, SEO-optimized, and fixes their previous website issues (like mobile responsiveness, fast loading speed, SSL, and modern UX).
-5. Customer Testimonials / Trust proof with 5-star Google Review aesthetic.
-6. Clean contact section and footer with business phone, address, and hours.
-Output ONLY complete, raw, ready-to-render HTML (from <!DOCTYPE html> to </html>) including all CSS/JS via CDN. Do not include markdown code fences or backticks.`
+  websitePromptTemplate: `You are an award-winning senior creative director and conversion rate optimization (CRO) web architect.
+Build an ultra-modern, high-converting, mobile-responsive single-page landing page website for this business.
+Key Directives:
+1. Sleek Modern Aesthetic: Tailwind CSS CDN with Google Fonts (Plus Jakarta Sans/Outfit). Deep slate background (bg-[#0B0F19] or bg-slate-950), crisp typography, glassmorphism cards (bg-slate-900/60 border border-slate-800), and vibrant brand accents (indigo, purple, amber, or emerald).
+2. Customer-Centric Copy: Speak directly to prospective clients/customers. Craft a compelling, niche-specific headline, clear value proposition, and frictionless CTAs (Call Now, Get Free Quote). Do NOT write about SEO audits, bug fixes, or technical weaknesses on the page.
+3. Realistic High-Resolution Imagery: Include 2 to 4 relevant Unsplash photos (https://images.unsplash.com/...) matching the business category for the hero and service showcases.
+4. Core Sections: Sticky Header with click-to-call, High-Impact Hero with trust proof and dual CTAs, 3-4 Featured Services with checkmark benefits, 3 Why Choose Us pillars, 2-3 Verified 5-Star Customer Reviews with gold stars, Contact/Quote Request form, and #client-adjustments section for the 48-hour preview review.
+5. Output Integrity: Output ONLY complete, raw, ready-to-render HTML (from <!DOCTYPE html> to </html>) including all styles via Tailwind CDN. No markdown backticks or conversational text.`
 };
 
 class Database {
@@ -416,7 +414,13 @@ class Database {
         const parsed = JSON.parse(fileContent);
         this.data = {
           leads: Array.isArray(parsed.leads) ? parsed.leads : [],
-          settings: { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) },
+          settings: (() => {
+            const s = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
+            if (!s.websitePromptTemplate || s.websitePromptTemplate.includes("fixes their previous website issues") || s.websitePromptTemplate.includes("audit fixes proof section")) {
+              s.websitePromptTemplate = DEFAULT_SETTINGS.websitePromptTemplate;
+            }
+            return s;
+          })(),
           crmRecords: Array.isArray(parsed.crmRecords) && parsed.crmRecords.length > 0 ? parsed.crmRecords : INITIAL_CRM_RECORDS,
           staff: Array.isArray(parsed.staff) && parsed.staff.length > 0 ? parsed.staff : INITIAL_STAFF_USERS,
           activities: Array.isArray(parsed.activities) && parsed.activities.length > 0 ? parsed.activities : INITIAL_STAFF_ACTIVITIES

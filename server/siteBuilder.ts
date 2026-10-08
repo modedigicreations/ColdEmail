@@ -318,164 +318,430 @@ export function sanitizeHtmlOutput(raw: string): string | null {
   return null;
 }
 
+// Curated presets for industry-tailored imagery, services, and conversion copy
+export function getNichePreset(category?: string) {
+  const cat = (category || "").toLowerCase();
+
+  if (cat.includes("aerial") || cat.includes("satellite") || cat.includes("audio") || cat.includes("cinema") || cat.includes("av") || cat.includes("tv")) {
+    return {
+      heroImage: "https://images.unsplash.com/photo-1593305841991-05c297ba4575?auto=format&fit=crop&w=1200&q=80",
+      heroBadge: "Digital TV Aerial & Satellite Specialists",
+      services: [
+        {
+          title: "Digital TV Aerials & 4K Reception",
+          desc: "High-gain benchmark digital aerial installations, repairs, signal amplifiers, and multi-room distribution for crystal-clear 4K and Freeview reception.",
+          points: ["4K & HD Freeview Optimization", "High-Gain Benchmark Antennas", "Same-Day Signal Diagnostics"]
+        },
+        {
+          title: "Satellite & Sky / Freesat Realignment",
+          desc: "Precision dish alignment, LNB replacements, multi-satellite systems, and European satellite reception with zero weather dropouts.",
+          points: ["Freesat & Sky Q Compatible", "Storm Damage & Realignment", "Clean Concealed Cabling"]
+        },
+        {
+          title: "Custom TV Wall Mounting & AV Setup",
+          desc: "Flush, tilt, and articulated heavy-duty wall mounting on stud or masonry walls with hidden in-wall cable concealment and soundbar integration.",
+          points: ["VESA Certified Heavy-Duty Mounts", "Clean In-Wall Cable Trunking", "Soundbar & Receiver Integration"]
+        }
+      ]
+    };
+  }
+
+  if (cat.includes("roof") || cat.includes("gutter") || cat.includes("fascia") || cat.includes("chimney")) {
+    return {
+      heroImage: "https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=1200&q=80",
+      heroBadge: "Certified Roofing, Chimney & Gutter Specialists",
+      services: [
+        {
+          title: "Complete Roof Replacements & Tiling",
+          desc: "Full slate, tile, and pitched roof installations using premium weather-resistant underlays and breathable high-performance membranes.",
+          points: ["25-Year Manufacturer Warranties", "Slate, Tile & Modern Flat Roofs", "Full Structural Inspections"]
+        },
+        {
+          title: "Emergency Leak Repairs & Storm Damage",
+          desc: "Rapid-response emergency callouts to locate, seal, and repair active leaks, slipped tiles, and storm-damaged lead valleys.",
+          points: ["24/7 Rapid Emergency Response", "Zero Callout Fee Estimates", "Water-Tight Weatherproof Sealing"]
+        },
+        {
+          title: "Fascias, Soffits & High-Flow Guttering",
+          desc: "Durable UPVC fascia boards, vented soffits, and high-capacity guttering systems designed to prevent costly foundation damp.",
+          points: ["Seamless Low-Maintenance UPVC", "Clog-Resistant Leaf Protection", "Complete Drainage Testing"]
+        }
+      ]
+    };
+  }
+
+  if (cat.includes("electric") || cat.includes("ev") || cat.includes("rewir")) {
+    return {
+      heroImage: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=1200&q=80",
+      heroBadge: "Licensed & Insured Electrical Specialists",
+      services: [
+        {
+          title: "Smart EV Charger Installation",
+          desc: "Certified home and commercial EV charging stations installed with dynamic load management and smartphone app control.",
+          points: ["OZEV Approved Installers", "Universal Fast Type 2 Charging", "Smart Energy App Integration"]
+        },
+        {
+          title: "Consumer Unit & Fuse Box Upgrades",
+          desc: "Modern surge-protected 18th Edition metal consumer units with RCBO protection to safeguard your home against electrical shocks.",
+          points: ["Full BS7671 Compliance", "Surge Protection (SPD) Included", "Safety Certification Supplied"]
+        },
+        {
+          title: "Emergency Fault Finding & Full Rewiring",
+          desc: "Precision electrical diagnostics, partial or full home rewiring, architectural LED lighting, and socket additions.",
+          points: ["Thermal Diagnostic Testing", "Minimal Wall Disruption", "Written Safety Guarantee"]
+        }
+      ]
+    };
+  }
+
+  if (cat.includes("plumb") || cat.includes("heat") || cat.includes("boiler") || cat.includes("gas")) {
+    return {
+      heroImage: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=1200&q=80",
+      heroBadge: "Gas Safe Registered Plumbing & Heating",
+      services: [
+        {
+          title: "Boiler Installation & Annual Servicing",
+          desc: "A-rated energy efficient combi and system boiler replacements with extended up to 10-year manufacturer warranties.",
+          points: ["Gas Safe Certified Engineers", "Up to 10-Year Warranty", "Same-Day Emergency Replacements"]
+        },
+        {
+          title: "Emergency Leak Detection & Pipework",
+          desc: "Precision acoustic and thermal leak detection with immediate repairs to stop water damage in its tracks.",
+          points: ["24/7 Rapid Response", "Burst Pipe & Radiator Repairs", "No Hidden Callout Fees"]
+        },
+        {
+          title: "Bathroom Renovations & Heating Upgrades",
+          desc: "Turnkey luxury bathroom plumbing, power flushing, underfloor heating, and smart thermostat integration.",
+          points: ["Power Flushing & Filter Fitting", "Smart Thermostat Control", "Turnkey Luxury Installations"]
+        }
+      ]
+    };
+  }
+
+  if (cat.includes("dental") || cat.includes("dentist") || cat.includes("orthodont") || cat.includes("smile")) {
+    return {
+      heroImage: "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1200&q=80",
+      heroBadge: "Advanced Cosmetic & General Dentistry",
+      services: [
+        {
+          title: "Invisalign & Clear Aligners",
+          desc: "Discreet orthodontic alignment with 3D digital smile scans, tailored treatment plans, and comfortable wear.",
+          points: ["Complimentary 3D Scans", "Virtually Invisible Aligners", "Flexible 0% Finance Options"]
+        },
+        {
+          title: "Teeth Whitening & Porcelain Veneers",
+          desc: "Professional in-clinic whitening and handcrafted porcelain veneers designed for bright, natural smile transformations.",
+          points: ["Up to 8 Shades Whiter", "Custom Handcrafted Veneers", "Enamel-Safe Treatments"]
+        },
+        {
+          title: "Gentle General Care & Dental Implants",
+          desc: "Anxiety-free hygiene checkups, restorative crowns, and permanent titanium dental implants with lifelong stability.",
+          points: ["Pain-Free Sedation Options", "Lifelong Implant Guarantees", "Emergency Appointments"]
+        }
+      ]
+    };
+  }
+
+  // Default / Professional Services Preset
+  return {
+    heroImage: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80",
+    heroBadge: "Top-Rated Local Specialists • Free Fast Estimates",
+    services: [
+      {
+        title: "Comprehensive Consultations & Diagnostics",
+        desc: "Thorough on-site evaluation, transparent upfront quotation, and expert recommendations tailored to your goals.",
+        points: ["Zero Obligation Estimates", "Same-Day Scheduling Available", "Clear Written Proposals"]
+      },
+      {
+        title: "Precision Execution & Quality Delivery",
+        desc: "Industry-standard workmanship carried out by vetted specialists using state-of-the-art tools and materials.",
+        points: ["Fully Insured & Vetted Team", "Strict Timelines & Clean Sites", "Premium Grade Materials"]
+      },
+      {
+        title: "Guaranteed Results & Ongoing Support",
+        desc: "Dedicated post-service warranties, proactive maintenance, and responsive customer care whenever you need it.",
+        points: ["100% Satisfaction Guarantee", "Written Workmanship Warranty", "Direct Line Support"]
+      }
+    ]
+  };
+}
+
 // High quality fallback landing page generator in case AI keys are not yet configured or rate limited
 export function generateFallbackTemplate(lead: Lead, baseDomain: string): string {
   const businessName = getLeadDisplayName(lead);
-  const issuesList = (lead.seoIssues && lead.seoIssues.length > 0)
-    ? lead.seoIssues.map(iss => `<span class="inline-block bg-red-500/10 border border-red-500/20 text-red-300 text-xs px-3 py-1 rounded-full mr-2 mb-2 font-medium">✓ Resolved: ${iss}</span>`).join("")
-    : '<span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs px-3 py-1 rounded-full mr-2 mb-2 font-medium">✓ 100/100 Mobile Speed & SEO Optimized</span>';
+  const preset = getNichePreset(lead.category);
+  const categoryTitle = lead.category || "Professional Services";
+  const phoneFormatted = lead.phone && !lead.phone.toLowerCase().includes("category") ? lead.phone.trim() : "";
+  const emailFormatted = lead.email && !lead.email.toLowerCase().includes("category") ? lead.email.trim() : "";
+  const ratingFormatted = lead.gmbRating ? `${lead.gmbRating}/5.0` : "5.0/5.0";
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${businessName} | Modern Experience & Services</title>
+  <title>${businessName} | ${categoryTitle} Specialists</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
-            sans: ["Outfit", "sans-serif"],
+            sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
           }
         }
       }
     }
   </script>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-purple-600 selection:text-white">
-  <!-- Top Notification Ribbon -->
-  <div class="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 text-xs py-2.5 px-4 text-center font-medium border-b border-purple-500/20 text-white flex flex-wrap items-center justify-center gap-3">
+<body class="bg-[#0B0F19] text-slate-100 font-sans antialiased selection:bg-purple-600 selection:text-white min-h-screen">
+  <!-- Top 48-Hour Preview Ribbon -->
+  <div class="bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-950 text-xs py-2.5 px-4 text-center font-medium border-b border-purple-500/30 text-white flex flex-wrap items-center justify-center gap-3">
     <span>⚡ <strong>Concept Redesign Preview</strong> for <strong class="text-purple-300">${businessName}</strong> • Active for <strong>48 Hours</strong> to review & request adjustments</span>
-    <a href="#client-adjustments" class="inline-flex items-center bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-1 rounded-full text-xs shadow transition">
-      Request Adjustments ✏️
+    <a href="#client-adjustments" class="inline-flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold px-3.5 py-1 rounded-full text-xs shadow-lg shadow-purple-600/30 transition">
+      <span>✏️</span> Request Adjustments
     </a>
   </div>
 
-  <!-- Header / Navigation -->
-  <header class="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur sticky top-0 z-50">
+  <!-- Sticky Header -->
+  <header class="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
     <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20 text-lg">
           ${businessName.substring(0, 1)}
         </div>
         <div>
           <span class="font-bold text-xl tracking-tight text-white block leading-tight">${businessName}</span>
-          <span class="text-xs text-purple-400 font-medium">${lead.category || "Professional Services"}</span>
+          <span class="text-xs text-purple-400 font-medium">${categoryTitle}</span>
         </div>
       </div>
       <nav class="hidden md:flex items-center space-x-8 text-sm font-medium text-slate-300">
         <a href="#services" class="hover:text-purple-400 transition">Services</a>
-        <a href="#audit-fixes" class="hover:text-purple-400 transition">Performance Upgrades</a>
-        <a href="#reviews" class="hover:text-purple-400 transition">Testimonials</a>
+        <a href="#why-us" class="hover:text-purple-400 transition">Why Choose Us</a>
+        <a href="#reviews" class="hover:text-purple-400 transition">Reviews</a>
         <a href="#contact" class="hover:text-purple-400 transition">Contact</a>
       </nav>
       <div class="flex items-center space-x-4">
-        ${lead.phone && !lead.phone.toLowerCase().includes("category") ? `<a href="tel:${lead.phone}" class="text-sm font-semibold text-slate-300 hover:text-white hidden sm:block">${lead.phone}</a>` : ""}
+        ${phoneFormatted ? `<a href="tel:${phoneFormatted}" class="text-sm font-semibold text-slate-300 hover:text-white hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-xl"><svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>${phoneFormatted}</a>` : ""}
         <a href="#contact" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-purple-600/30 transition transform hover:-translate-y-0.5">
-          Get Started
+          Get Free Quote
         </a>
       </div>
     </div>
   </header>
 
-  <!-- Hero Section -->
-  <section class="relative pt-20 pb-24 overflow-hidden">
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))]"></div>
-    <div class="max-w-7xl mx-auto px-6 relative z-10 text-center">
-      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300 text-xs font-semibold uppercase tracking-wider mb-8">
-        ★ Premium Client Demo Concept
-      </div>
-      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white max-w-4xl mx-auto leading-tight">
-        Elevating Customer Experience For <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400">${businessName}</span>
-      </h1>
-      <p class="mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
-        Engineered for rapid loading, seamless mobile booking, and 5-star customer conversions. Built to outrank competitors and drive direct inquiries.
-      </p>
+  <!-- Hero Section (Split Layout with High-Resolution Visual) -->
+  <section class="relative pt-16 pb-24 overflow-hidden">
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.18),rgba(255,255,255,0))]"></div>
+    <div class="max-w-7xl mx-auto px-6 relative z-10">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        <!-- Left: Headline & Actions -->
+        <div class="lg:col-span-7 text-left">
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300 text-xs font-semibold uppercase tracking-wider mb-6">
+            ★ ${preset.heroBadge}
+          </div>
+          <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight text-white leading-tight">
+            Premier <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-indigo-400">${categoryTitle}</span> For ${businessName}
+          </h1>
+          <p class="mt-6 text-lg sm:text-xl text-slate-300 max-w-2xl leading-relaxed">
+            Delivering precision craftsmanship, transparent upfront pricing, and guaranteed 5-star customer satisfaction across the entire local area.
+          </p>
 
-      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-        <a href="#contact" class="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold px-8 py-4 rounded-xl shadow-xl shadow-purple-600/30 transition transform hover:-translate-y-0.5 text-center">
-          Schedule An Appointment
-        </a>
-        <a href="#audit-fixes" class="w-full sm:w-auto bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold px-8 py-4 rounded-xl transition text-center">
-          View Performance Upgrades
-        </a>
+          <div class="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <a href="#contact" class="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-8 py-4 rounded-xl shadow-xl shadow-purple-600/30 transition transform hover:-translate-y-0.5 text-center">
+              Request Free Instant Quote
+            </a>
+            ${phoneFormatted ? `<a href="tel:${phoneFormatted}" class="bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold px-6 py-4 rounded-xl transition text-center flex items-center justify-center gap-2">
+              <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>
+              Call ${phoneFormatted}
+            </a>` : `<a href="#services" class="bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold px-6 py-4 rounded-xl transition text-center">
+              Explore Our Services
+            </a>`}
+          </div>
+
+          <!-- Trust Badges Row -->
+          <div class="mt-8 pt-8 border-t border-slate-800/80 flex flex-wrap items-center gap-6 text-xs text-slate-400 font-medium">
+            <div class="flex items-center gap-1.5">
+              <span class="flex text-amber-400">★★★★★</span>
+              <strong class="text-white">${ratingFormatted}</strong> Google Rating
+            </div>
+            <div class="flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+              <span>Fully Licensed & Insured</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+              <span>Written Workmanship Warranty</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: High-Res Hero Showcase Visual -->
+        <div class="lg:col-span-5">
+          <div class="relative mx-auto max-w-md lg:max-w-none">
+            <div class="absolute -inset-1 rounded-3xl bg-gradient-to-r from-purple-600 to-indigo-600 opacity-30 blur-xl"></div>
+            <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-2xl">
+              <img src="${preset.heroImage}" alt="${businessName}" class="w-full h-80 sm:h-96 object-cover object-center transform hover:scale-105 transition duration-500">
+              
+              <!-- Floating Overlays -->
+              <div class="absolute top-4 left-4 bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl px-3.5 py-2 shadow-xl flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="text-xs font-semibold text-white">Same-Day Service Available</span>
+              </div>
+
+              <div class="absolute bottom-4 right-4 bg-slate-950/90 backdrop-blur-md border border-slate-800 rounded-xl px-4 py-2.5 shadow-xl text-right">
+                <div class="text-xs text-purple-400 font-semibold uppercase tracking-wider">Peace of Mind</div>
+                <div class="text-sm font-bold text-white">100% Guaranteed Work</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- Quick Metrics Proof -->
-      <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto border border-slate-800/80 rounded-2xl bg-slate-900/40 p-6 backdrop-blur">
+      <!-- Quick Metrics Proof Strip -->
+      <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 border border-slate-800/80 rounded-2xl bg-slate-900/40 p-6 backdrop-blur">
         <div>
-          <div class="text-3xl font-extrabold text-white">99<span class="text-purple-400">+</span></div>
-          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">PageSpeed Score</div>
+          <div class="text-3xl font-extrabold text-white">15<span class="text-purple-400">+</span></div>
+          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Years Serving Locals</div>
         </div>
         <div>
-          <div class="text-3xl font-extrabold text-white">${lead.gmbRating ? `${lead.gmbRating}/5` : "5.0★"}</div>
-          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Customer Rating</div>
+          <div class="text-3xl font-extrabold text-white">100<span class="text-purple-400">%</span></div>
+          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Guaranteed Workmanship</div>
         </div>
         <div>
-          <div class="text-3xl font-extrabold text-white">&lt;0.8s</div>
-          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Instant Load Time</div>
+          <div class="text-3xl font-extrabold text-white">&lt;1hr</div>
+          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Rapid Response Time</div>
         </div>
         <div>
-          <div class="text-3xl font-extrabold text-white">100%</div>
-          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Mobile Responsive</div>
+          <div class="text-3xl font-extrabold text-white">5.0★</div>
+          <div class="text-xs text-slate-400 mt-1 uppercase font-medium">Verified Client Rating</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Performance & Issue Fixes Section -->
-  <section id="audit-fixes" class="py-20 bg-slate-900/50 border-t border-slate-800">
-    <div class="max-w-7xl mx-auto px-6">
-      <div class="max-w-3xl mb-12">
-        <span class="text-purple-400 font-semibold text-sm tracking-wider uppercase">Key Enhancements</span>
-        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-2">Engineered To Outperform Current Standards</h2>
-        <p class="text-slate-400 mt-3 text-base">Here are the specific technical bottlenecks this redesign proactively rectifies:</p>
-      </div>
-
-      <div class="p-6 rounded-2xl bg-slate-950 border border-slate-800">
-        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Resolved Audit Weaknesses:</h3>
-        <div class="flex flex-wrap">
-          ${issuesList}
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Services / Features Grid -->
-  <section id="services" class="py-24 max-w-7xl mx-auto px-6">
+  <!-- Featured Services Grid -->
+  <section id="services" class="py-24 max-w-7xl mx-auto px-6 border-t border-slate-900">
     <div class="text-center max-w-2xl mx-auto mb-16">
-      <span class="text-purple-400 font-semibold text-sm tracking-wider uppercase">What We Deliver</span>
-      <h2 class="text-3xl sm:text-4xl font-bold text-white mt-2">Comprehensive Solutions For Your Needs</h2>
+      <span class="text-purple-400 font-semibold text-xs tracking-wider uppercase bg-purple-500/10 border border-purple-500/20 px-3 py-1 rounded-full">Core Specialisms</span>
+      <h2 class="text-3xl sm:text-4xl font-bold text-white mt-4">Comprehensive Solutions For Your Needs</h2>
+      <p class="text-slate-400 mt-3 text-sm sm:text-base">Every project is handled with exacting standards, modern tooling, and full manufacturer-backed warranties.</p>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-purple-500/50 transition">
-        <div class="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xl mb-6">
-          ✦
+      ${preset.services.map((svc, i) => `
+      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-purple-500/50 transition duration-300 flex flex-col justify-between group ${i === 1 ? 'relative ring-1 ring-purple-500/40' : ''}">
+        ${i === 1 ? '<span class="absolute -top-3 right-6 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-lg">Most Requested</span>' : ''}
+        <div>
+          <div class="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xl mb-6 group-hover:scale-110 transition duration-300">
+            ${i === 0 ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>' : (i === 1 ? '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>' : '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>')}
+          </div>
+          <h3 class="text-xl font-bold text-white mb-3">${svc.title}</h3>
+          <p class="text-slate-400 text-sm leading-relaxed mb-6">${svc.desc}</p>
+          <ul class="space-y-2.5 mb-8">
+            ${svc.points.map(pt => `
+            <li class="flex items-center gap-2.5 text-xs text-slate-300">
+              <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+              <span>${pt}</span>
+            </li>`).join("")}
+          </ul>
         </div>
-        <h3 class="text-xl font-bold text-white mb-3">Priority Service & Quality</h3>
-        <p class="text-slate-400 text-sm leading-relaxed">Dedicated attention to ensure every client receives personalized care, precise outcomes, and industry-leading standards.</p>
+        <a href="#contact" class="inline-flex items-center gap-2 text-sm font-semibold text-purple-400 group-hover:text-purple-300 transition">
+          Inquire About This Service <span>&rarr;</span>
+        </a>
+      </div>`).join("")}
+    </div>
+  </section>
+
+  <!-- Why Choose Us Section -->
+  <section id="why-us" class="py-20 bg-slate-900/40 border-t border-slate-800">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <span class="text-purple-400 font-semibold text-xs tracking-wider uppercase bg-purple-500/10 border border-purple-500/20 px-3 py-1 rounded-full">The ${businessName} Standard</span>
+        <h2 class="text-3xl sm:text-4xl font-bold text-white mt-4">Why Local Clients Trust Our Team</h2>
+        <p class="text-slate-400 mt-3 text-sm sm:text-base">We combine responsive communication with certified mastery to ensure your project is completed flawlessly.</p>
       </div>
 
-      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-purple-500/50 transition">
-        <div class="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold text-xl mb-6">
-          ⚡
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div class="p-8 rounded-2xl bg-slate-950 border border-slate-800">
+          <div class="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold text-xl mb-6">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Transparent Upfront Pricing</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">No surprise invoices or hidden callout charges. You receive a clear, fixed estimate before any work commences.</p>
         </div>
-        <h3 class="text-xl font-bold text-white mb-3">Instant Booking & Inquiries</h3>
-        <p class="text-slate-400 text-sm leading-relaxed">Frictionless digital touchpoints that make scheduling consultations effortless across all smartphones and tablets.</p>
+
+        <div class="p-8 rounded-2xl bg-slate-950 border border-slate-800">
+          <div class="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-xl mb-6">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Vetted & Qualified Specialists</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Every installation is carried out by vetted professionals equipped with precision diagnostic instrumentation.</p>
+        </div>
+
+        <div class="p-8 rounded-2xl bg-slate-950 border border-slate-800">
+          <div class="w-12 h-12 rounded-xl bg-pink-500/10 text-pink-400 flex items-center justify-center font-bold text-xl mb-6">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z"/></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Written Workmanship Guarantee</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Full peace of mind backed by comprehensive warranties on all parts and labour. If anything isn't right, we fix it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Verified 5-Star Customer Reviews -->
+  <section id="reviews" class="py-24 max-w-7xl mx-auto px-6">
+    <div class="text-center max-w-2xl mx-auto mb-16">
+      <span class="text-purple-400 font-semibold text-xs tracking-wider uppercase bg-purple-500/10 border border-purple-500/20 px-3 py-1 rounded-full">Client Testimonials</span>
+      <h2 class="text-3xl sm:text-4xl font-bold text-white mt-4">Verified 5-Star Customer Feedback</h2>
+      <p class="text-slate-400 mt-3 text-sm sm:text-base">Real experiences from local homeowners and businesses who rely on our services.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center gap-1 text-amber-400 mb-4">
+          ★★★★★
+        </div>
+        <p class="text-slate-300 text-sm leading-relaxed mb-6">"Arrived exactly on schedule, diagnosed the issue within 10 minutes, and completed the job cleanly. Outstanding workmanship and honest pricing."</p>
+        <div class="flex items-center justify-between pt-4 border-t border-slate-800">
+          <div>
+            <div class="text-sm font-bold text-white">Mark H.</div>
+            <div class="text-xs text-slate-500">Verified Local Customer</div>
+          </div>
+          <span class="text-[11px] text-emerald-400 font-medium">✓ Google Review</span>
+        </div>
       </div>
 
-      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-purple-500/50 transition">
-        <div class="w-12 h-12 rounded-xl bg-pink-500/10 text-pink-400 flex items-center justify-center font-bold text-xl mb-6">
-          ★
+      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center gap-1 text-amber-400 mb-4">
+          ★★★★★
         </div>
-        <h3 class="text-xl font-bold text-white mb-3">Proven Local Trust</h3>
-        <p class="text-slate-400 text-sm leading-relaxed">Consistently backed by outstanding verified reviews and community recommendations.</p>
+        <p class="text-slate-300 text-sm leading-relaxed mb-6">"Fast, courteous, and incredibly knowledgeable. The difference in quality was immediate. Would not hesitate to recommend to friends and family."</p>
+        <div class="flex items-center justify-between pt-4 border-t border-slate-800">
+          <div>
+            <div class="text-sm font-bold text-white">David & Sarah T.</div>
+            <div class="text-xs text-slate-500">Verified Local Customer</div>
+          </div>
+          <span class="text-[11px] text-emerald-400 font-medium">✓ Google Review</span>
+        </div>
+      </div>
+
+      <div class="p-8 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div class="flex items-center gap-1 text-amber-400 mb-4">
+          ★★★★★
+        </div>
+        <p class="text-slate-300 text-sm leading-relaxed mb-6">"Professional from initial phone call to finished install. Cleaned up thoroughly after the work and explained everything in detail. 10/10."</p>
+        <div class="flex items-center justify-between pt-4 border-t border-slate-800">
+          <div>
+            <div class="text-sm font-bold text-white">James R.</div>
+            <div class="text-xs text-slate-500">Verified Local Customer</div>
+          </div>
+          <span class="text-[11px] text-emerald-400 font-medium">✓ Google Review</span>
+        </div>
       </div>
     </div>
   </section>
@@ -484,11 +750,12 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
   <section id="contact" class="py-20 bg-gradient-to-b from-slate-900 to-slate-950 border-t border-slate-800">
     <div class="max-w-4xl mx-auto px-6 text-center">
       <h2 class="text-3xl sm:text-5xl font-extrabold text-white">Connect With ${businessName} Today</h2>
-      <p class="text-slate-400 mt-4 text-lg">We are here to provide tailored solutions and exceed your expectations.</p>
+      <p class="text-slate-400 mt-4 text-base sm:text-lg">Contact our friendly team today for prompt scheduling and no-obligation estimates.</p>
       
       <div class="mt-8 flex flex-wrap justify-center gap-6 text-slate-300 text-sm">
-        ${lead.phone && !lead.phone.toLowerCase().includes("category") ? `<div><strong>Phone:</strong> <a href="tel:${lead.phone}" class="text-purple-400 hover:underline">${lead.phone}</a></div>` : ""}
-        ${lead.email && !lead.email.toLowerCase().includes("category") ? `<div><strong>Email:</strong> <a href="mailto:${lead.email}" class="text-purple-400 hover:underline">${lead.email}</a></div>` : ""}
+        ${phoneFormatted ? `<div><strong>Phone:</strong> <a href="tel:${phoneFormatted}" class="text-purple-400 hover:underline font-semibold">${phoneFormatted}</a></div>` : ""}
+        ${emailFormatted ? `<div><strong>Email:</strong> <a href="mailto:${emailFormatted}" class="text-purple-400 hover:underline font-semibold">${emailFormatted}</a></div>` : ""}
+        <div><strong>Hours:</strong> Mon - Sat: 8:00 AM - 6:00 PM</div>
       </div>
 
       <div class="mt-12 p-8 rounded-2xl bg-slate-900/80 border border-slate-800 text-left max-w-lg mx-auto shadow-2xl">
@@ -498,15 +765,15 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
             <input type="text" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="Jane Doe">
           </div>
           <div class="mb-4">
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Email Address</label>
-            <input type="email" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="jane@example.com">
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Phone or Email Address</label>
+            <input type="text" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="jane@example.com / 07123456789">
           </div>
           <div class="mb-6">
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Message or Service Request</label>
-            <textarea rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="How can we assist you?"></textarea>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Service Needed</label>
+            <input type="text" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="e.g. ${preset.services[0].title}">
           </div>
-          <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 font-bold py-3.5 rounded-xl text-white text-sm transition">
-            Send Inquiry
+          <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 font-bold py-3.5 rounded-xl text-white text-sm transition shadow-lg shadow-purple-600/30">
+            Submit Free Quote Request
           </button>
         </form>
       </div>
@@ -599,35 +866,102 @@ export async function generateWebsiteHtml(lead: Lead, settings: Settings): Promi
     .trim();
 
   const businessName = getLeadDisplayName(lead);
+  const preset = getNichePreset(lead.category);
+  const nicheCategory = lead.category || "Professional Services";
+  const phoneFormatted = lead.phone && !lead.phone.toLowerCase().includes("category") ? lead.phone.trim() : "N/A";
+  const emailFormatted = lead.email && !lead.email.toLowerCase().includes("category") ? lead.email.trim() : "N/A";
+
   const leadContext = `
 Business Name: ${businessName}
-Category/Niche: ${lead.category || "Local Business"}
+Category / Niche: ${nicheCategory}
 Current Website: ${lead.website || "None"}
-Phone Number: ${lead.phone || "N/A"}
-Google Review Rating: ${lead.gmbRating ? `${lead.gmbRating}/5.0` : "4.9/5.0"}
-Known Technical / SEO / Performance Weaknesses to Solve: ${lead.seoIssues && lead.seoIssues.length > 0 ? lead.seoIssues.join(", ") : "Slow load speed, outdated mobile layout, weak call-to-action"}
+Phone Number: ${phoneFormatted}
+Email Address: ${emailFormatted}
+Customer Rating: ${lead.gmbRating ? `${lead.gmbRating}/5.0` : "4.9/5.0"}
 Crawled Business Details / Offerings:
-${lead.crawledText || "No existing website crawled. Tailor directly to the business name and niche."}
-  `.trim();
+${lead.crawledText ? lead.crawledText.slice(0, 1500) : "Tailor specifically to this trade and business name."}
 
-  const defaultSystemPrompt = `You are an elite web designer and conversion optimization engineer.
-Build a stunning, modern, high-converting, mobile-responsive single-page website for this business.
-CRITICAL FORMAT & DESIGN RULES:
-1. Output ONLY raw, complete HTML5 code starting with <!DOCTYPE html> and ending with </html>. Do not include markdown code fences or conversational text.
-2. Styling MUST use Tailwind CSS CDN (<script src="https://cdn.tailwindcss.com"></script>) and Tailwind utility classes directly in elements.
-3. DO NOT write extensive custom CSS in <style> tags (keep any <style> under 30 lines for simple keyframe animations only).
-4. The HTML document MUST be completely generated with all sections fully closed before ending with </body></html>.
-5. Include: sticky navigation header, hero section with compelling CTA, services/features grid, audit fixes proof section, customer testimonials, contact/lead form, client 48h review notes section, and footer.\n6. Mention in the top banner that this is an interactive 48-hour live preview concept for the client to review and suggest adjustments before their official website is finalized.`;
+High-Resolution Unsplash Image Suggestions For This Niche:
+- Hero Showcase Image: ${preset.heroImage}
+- Industry Niche Theme: ${preset.heroBadge}
+`.trim();
 
-  const systemPrompt = settings.websitePromptTemplate?.trim() || defaultSystemPrompt;
+  const defaultSystemPrompt = `You are an award-winning senior creative director and conversion rate optimization (CRO) web architect.
+Your mission is to generate a breathtaking, ultra-modern, high-converting, mobile-responsive single-page website for the specified business.
+
+CRITICAL DESIGN & VISUAL AESTHETIC DIRECTIVES:
+1. LUXURY MODERN AESTHETIC (The "WOW" Factor):
+   - Use Tailwind CSS CDN (<script src="https://cdn.tailwindcss.com"></script>) with Google Fonts "Plus Jakarta Sans" or "Outfit".
+   - Use a sleek, high-contrast palette: deep slate/zinc background (e.g. bg-[#0B0F19] or bg-slate-950), crisp white headings, subtle borders (border-slate-800 or border-white/10), and vibrant brand accents (e.g. indigo/purple, electric blue, amber/gold for trades, or emerald/cyan).
+   - Use modern glassmorphism (backdrop-blur-md bg-slate-900/60) and subtle hover elevations (hover:-translate-y-1 transition duration-300).
+   - Use crisp inline SVGs (heroicons/lucide style for checkmarks, stars, phone, shield, clock, location, and services) instead of plain emojis or character symbols.
+   - Avoid generic, plain flat Bootstrap-style layouts or washed-out gray boxes.
+
+2. AUTHENTIC BUSINESS COPYWRITING (NOT AN AUDIT REPORT):
+   - The website MUST be written directly to the business's real prospective customers (homeowners, clients, patients).
+   - Headline MUST be compelling and niche-specific (e.g., "Premier TV Aerial & Satellite Installations In [Area]" or "Trusted Local Roofing Specialists").
+   - NEVER create sections talking about "SEO audit weaknesses", "PageSpeed fixes", or "bugs resolved". The website proves its superiority naturally through blazing speed, clean design, and effortless UX.
+
+3. REALISTIC HIGH-RESOLUTION IMAGERY:
+   - Include 2 to 4 high-resolution, industry-relevant Unsplash photos (using the provided Unsplash URLs or https://images.unsplash.com/... with auto=format&fit=crop&w=800&q=80 or w=1200&q=80) for:
+     a) Hero visual (e.g. split-screen hero showcase card with subtle glow, or hero background with dark gradient overlay)
+     b) Featured services or showcase gallery cards
+   - Select photos that authentically represent their trade or industry.
+
+4. CORE SECTION ARCHITECTURE (Strictly 7-8 focused, high-impact sections):
+   1. Sticky Header: Brand initial badge, Business name, navigation links (Services, Why Us, Reviews, Contact), click-to-call phone button, and high-visibility "Get Free Quote" CTA button.
+   2. High-Impact Hero:
+      - Category trust pill (e.g. "★ Top-Rated Local Specialists • Free Fast Estimates").
+      - Clear, benefit-driven headline & 2-sentence value proposition.
+      - Dual CTAs: Primary [Request Free Quote] + Secondary [Call Now or Browse Services].
+      - Split visual with high-res niche photo & floating trust badge (e.g. "✓ Same-Day Service Available").
+      - Quick Proof Row: 4 key metrics (e.g. 5.0 Google Rating with 5 gold stars, 15+ Years Experience, 100% Guaranteed Workmanship, Fast Local Response).
+   3. Featured Services Grid (3-4 focused cards):
+      - Clean modern SVG icon or image thumbnail for each service.
+      - Specific, realistic service titles (tailored to their actual business).
+      - 3 bullet points with checkmark SVGs and a "Get Quote" link.
+      - Highlight one card as "Most Popular" or "Featured".
+   4. Why Choose Us / Advantage (3 Pillars):
+      - Upfront transparent pricing, certified & vetted technicians, written guarantee.
+   5. Verified 5-Star Reviews (2-3 realistic testimonials):
+      - Real reviewer names, verified customer badges, 5 gold star icons, and authentic glowing feedback.
+   6. Fast Quote & Contact Section:
+      - Direct contact details: Phone (clickable tel:), Email (clickable mailto:), opening hours, and service area.
+      - Interactive modern quote inquiry form (Name, Phone, Service, Message, Submit button).
+   7. Client 48-Hour Review Period Section (#client-adjustments):
+      - Dedicated block explaining this is an interactive 48-hour live preview concept for the client to review, with an adjustment submission form so they can request changes to text, services, or imagery before the final build.
+   8. Footer:
+      - Clean brand signature, copyright, and subtle concept watermark.
+
+5. OUTPUT INTEGRITY:
+   - Output ONLY raw, complete HTML5 starting with <!DOCTYPE html> and ending with </html>.
+   - Do NOT wrap in markdown code blocks (\`\`\`html). No introductory or concluding conversational text.
+   - All elements and tags MUST be properly closed. Ensure the document finishes completely before </body></html>.`;
+
+  let systemPrompt = defaultSystemPrompt;
+  if (settings.websitePromptTemplate && settings.websitePromptTemplate.trim()) {
+    const rawTemplate = settings.websitePromptTemplate.trim();
+    const isLegacyOldPrompt = rawTemplate.includes("fixes their previous website issues") || 
+                              rawTemplate.includes("audit fixes proof section") ||
+                              rawTemplate.includes("4. \"Modern Web & Mobile Experience\" badge/section");
+    if (!isLegacyOldPrompt) {
+      systemPrompt = rawTemplate;
+    }
+  }
 
   const userPrompt = `
 Here is the business information:
 ${leadContext}
 
-Generate a complete, fully finished, ready-to-render single-page landing page HTML for this business.
-Address the specific weaknesses highlighted in their audit. Make it look extremely modern, trustworthy, and conversion-optimized using Tailwind CSS utility classes.
-Output ONLY valid, complete HTML starting with <!DOCTYPE html> and ending with </html>. Do NOT stop mid-way.
+INSTRUCTIONS:
+Generate a complete, fully finished, ultra-modern single-page landing page HTML for this business.
+- Industry/Niche: ${nicheCategory}
+- Tailor all headlines, services, benefits, and imagery specifically to ${businessName}.
+- Speak directly to their prospective customers with high-converting, professional copywriting.
+- Use high-resolution Unsplash images matching this niche (e.g. ${preset.heroImage}).
+- Style using Tailwind CSS CDN with a sleek, premium dark or modern high-contrast aesthetic.
+- Include the #client-adjustments section for the 48-hour preview review.
+Output ONLY raw, complete HTML starting with <!DOCTYPE html> and ending with </html>. Do not truncate.
   `.trim();
 
   // Try AI generation

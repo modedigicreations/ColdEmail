@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { isValidWebsiteHtml, sanitizeHtmlOutput, generateFallbackTemplate, getLeadDisplayName, injectClientReviewPortal } from "./siteBuilder.js";
+import { isValidWebsiteHtml, sanitizeHtmlOutput, generateFallbackTemplate, getLeadDisplayName, injectClientReviewPortal, getNichePreset } from "./siteBuilder.js";
 import { Lead } from "./db.js";
 
 test("isValidWebsiteHtml rejects null, undefined and short strings", () => {
@@ -148,4 +148,36 @@ test("injectClientReviewPortal injects top ribbon, floating button, modal, and g
   assert.ok(injected.includes("Mode Guaranteed Complete Footer"), "Must inject guaranteed footer when missing");
   assert.ok(!injected.includes("<section id=\"\\n"), "Must strip dangling unclosed section tag");
   assert.ok(injected.includes("TV Aerial Pro"), "Must include business name in banner and modal");
+});
+
+test("getNichePreset returns industry-tailored photography and services", () => {
+  const aerial = getNichePreset("TV Aerial & Satellite Installation");
+  assert.ok(aerial.heroImage.includes("unsplash.com"), "Must return Unsplash hero photo");
+  assert.ok(aerial.heroBadge.includes("Aerial"), "Must match aerial niche");
+  assert.strictEqual(aerial.services.length, 3, "Must return 3 core services");
+
+  const roofing = getNichePreset("Roofing Contractor");
+  assert.ok(roofing.heroBadge.includes("Roofing"));
+
+  const generic = getNichePreset("Miscellaneous Business");
+  assert.ok(generic.heroImage.includes("unsplash.com"));
+});
+
+test("generateFallbackTemplate produces modern, conversion-focused design with niche imagery and reviews", () => {
+  const lead: Lead = {
+    id: "lead_modern",
+    name: "ClearVision Aerials",
+    category: "TV Aerial & Satellite Installation",
+    phone: "0800 123 4567",
+    email: "info@clearvision.co.uk",
+    status: "site_ready"
+  };
+
+  const html = generateFallbackTemplate(lead, "adeolamedia.co.uk");
+  assert.strictEqual(isValidWebsiteHtml(html), true);
+  assert.ok(html.includes("images.unsplash.com"), "Must embed high-res Unsplash photo");
+  assert.ok(html.includes("Plus Jakarta Sans"), "Must use modern Google Font");
+  assert.ok(html.includes("Verified 5-Star Customer Feedback"), "Must include social proof reviews section");
+  assert.ok(html.includes("The ClearVision Aerials Standard"), "Must include why-choose-us section");
+  assert.ok(!html.includes("Resolved Audit Weaknesses"), "Must not display awkward audit diagnosis text");
 });
