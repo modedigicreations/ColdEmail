@@ -48,7 +48,7 @@ Here is your (the sender's) contact details and email signature to conclude the 
 ${settings.emailSignature || 'N/A'}
 
 Please compose a highly personalized cold email tailored to this business.
-CRITICAL: If a live demo website link is provided (${cleanDemoUrl || 'N/A'}), enthusiastically present this link in the email! Explain that we went ahead and designed a modern, fast, mobile-responsive preview tailored specifically to their business to show them how their online presence and conversion rate can be transformed.
+CRITICAL: If a live demo website link is provided (${cleanDemoUrl || 'N/A'}), enthusiastically present this link in the email! Explain that we went ahead and designed a modern, fast, mobile-responsive preview tailored specifically to their business to show them how their online presence and conversion rate can be transformed. Mention that this private preview link is active for 48 hours so they can review the concept, explore the speed improvements, and request any adjustments for their final website.
 IMPORTANT: Do NOT wrap the URL, link, or subdomain in asterisks (* or **), markdown formatting, brackets, or quotes. Output the URL as a clean, bare link so it is immediately clickable and opens properly without syntax corruption.
 Reference their specific audit issues (e.g. speed, mobile layout, SEO score, ratings) and show how the demo solves them.
 Keep the email under 150 words, conversational, respectful, and close with a low-friction question inviting them to review their live preview link.
@@ -246,7 +246,7 @@ export async function generateWhatsAppPitch(lead: Lead, settings: Settings): Pro
   const cleanDemoUrl = sanitizeDemoUrl(lead.demoSiteUrl, lead, settings);
 
   const customPrompt = settings.whatsappPromptTemplate || `You are an elite B2B sales outreach copywriter. Compose a short, punchy, conversational WhatsApp pitch to the business owner or manager.
-Introduce the bespoke, high-converting live demo website redesign we built for their brand (use {{Demo Website}} or {{demoSiteUrl}}).
+Introduce the bespoke, high-converting live demo website redesign we built for their brand (use {{Demo Website}} or {{demoSiteUrl}}). Mention this private demo link is live for the next 48 hours for them to explore and request any desired adjustments before the final site is built.
 Highlight 1-2 core improvements (e.g. mobile responsiveness, ultra-fast load time, modern design) that their current site lacks.
 Keep it brief (under 60 words). Use natural WhatsApp formatting (*bold* for emphasis, clean spacing, polite emoji like 👋 or 🚀). Offer direct value and invite a quick look.`;
 

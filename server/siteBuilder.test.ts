@@ -106,3 +106,18 @@ test("sanitizeHtmlOutput rejects truncated code that cuts off in <style>", () =>
   const result = sanitizeHtmlOutput(truncatedAiOutput);
   assert.strictEqual(result, null);
 });
+
+test("generateFallbackTemplate includes 48-hour preview notice and client adjustments form", () => {
+  const lead: Lead = {
+    id: "lead_48h",
+    name: "Vertex Windows",
+    category: "Glazing",
+    phone: "07987654321",
+    status: "site_ready"
+  };
+  const html = generateFallbackTemplate(lead, "adeolamedia.co.uk");
+  assert.ok(html.includes("48 Hours"), "Must mention 48 hours preview");
+  assert.ok(html.includes("client-adjustments"), "Must have client adjustments section");
+  assert.ok(html.includes("handleAdjustmentSubmit"), "Must have adjustment submission handler");
+  assert.strictEqual(isValidWebsiteHtml(html), true);
+});

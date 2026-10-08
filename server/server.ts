@@ -827,10 +827,14 @@ app.post('/api/leads/:id/build-and-deploy', async (req, res) => {
     // 3. Deploy
     const deployRes = await deployLeadWebsite(subdomain, html, settings);
 
+    const now = Date.now();
     const updated = db.updateLead(lead.id, {
       subdomain,
       demoSiteHtml: html,
       demoSiteUrl: getLeadPreviewUrl(lead, settings) || deployRes.url,
+      demoCreatedAt: new Date(now).toISOString(),
+      demoExpiresAt: new Date(now + 48 * 60 * 60 * 1000).toISOString(),
+      demoViewCount: 0,
       siteStatus: 'deployed',
       status: 'site_ready',
       error: undefined
@@ -942,11 +946,129 @@ app.get('/demo/:subdomainOrId', (req, res) => {
       return res.status(404).send('<!DOCTYPE html><html><body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><h2>Demo Preview Not Found</h2><p style="color:#64748b;">The demo redesign for this business is either still generating or was moved.</p></div></body></html>');
     }
 
+    // 48-Hour Active Link Window & Unlimited View Tracking
+    if (lead) {
+      const now = Date.now();
+      const expiresAtMs = lead.demoExpiresAt ? new Date(lead.demoExpiresAt).getTime() : (now + 48 * 60 * 60 * 1000);
+      const isExpired = expiresAtMs < now;
+      const isBypass = req.query.bypass === 'true' || req.query.admin === 'true';
+
+      if (isExpired && !isBypass) {
+        const businessName = getLeadDisplayName(lead);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${businessName} | 48-Hour Preview Concluded</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex items-center justify-center p-6">
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl">
+    <div class="w-16 h-16 mx-auto mb-6 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center text-3xl font-bold">
+      ⏱
+    </div>
+    <span class="text-xs font-semibold uppercase tracking-wider text-purple-400 bg-purple-500/10 border border-purple-500/20 px-3.5 py-1 rounded-full">48-Hour Review Period Concluded</span>
+    <h1 class="text-2xl font-bold mt-4">Preview Window Concluded</h1>
+    <p class="text-slate-400 text-sm mt-3 leading-relaxed">
+      The 48-hour live preview concept for <strong class="text-white">${businessName}</strong> has completed. We are ready to proceed with your official production build or apply your custom adjustments.
+    </p>
+    <div class="mt-8 space-y-3">
+      ${lead.phone ? `<a href="tel:${lead.phone}" class="block w-full py-3.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 font-semibold text-sm transition">Contact Design Team</a>` : `<a href="mailto:contact@modewebhost.com" class="block w-full py-3.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 font-semibold text-sm transition">Contact Design Team</a>`}
+      <a href="/demo/${lead.id}?bypass=true" class="block w-full py-2 text-xs text-slate-500 hover:text-slate-400">
+        Re-open Preview (Agency Access)
+      </a>
+    </div>
+  </div>
+</body>
+</html>`);
+      }
+
+      // Track view count and ensure expiration is set to 48 hours from creation
+      const views = (lead.demoViewCount || 0) + 1;
+      const lastView = new Date().toISOString();
+      const demoExpiresAtStr = lead.demoExpiresAt || new Date(now + 48 * 60 * 60 * 1000).toISOString();
+      try {
+        db.updateLead(lead.id, {
+          demoViewCount: views,
+          lastViewedAt: lastView,
+          demoExpiresAt: demoExpiresAtStr
+        });
+      } catch (_) {}
+    }
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.removeHeader('X-Frame-Options');
     return res.send(html);
   } catch (err: any) {
     res.status(500).send(`Demo error: ${err.message}`);
+  }
+});
+
+// Client adjustments & feedback submission from demo website
+app.post(['/api/leads/:id/demo-feedback', '/api/demo/:id/feedback'], (req, res) => {
+  try {
+    const rawParam = (req.params.id || '').trim();
+    const param = rawParam.replace(/\.html$/i, '');
+    const leads = db.getLeads();
+    const lead = leads.find(l => 
+      l.id === param || 
+      l.subdomain === param ||
+      l.id.toLowerCase() === param.toLowerCase() ||
+      (l.subdomain && l.subdomain.toLowerCase() === param.toLowerCase())
+    );
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const { name, notes } = req.body || {};
+    if (!notes || !notes.trim()) {
+      return res.status(400).json({ error: 'Please describe the adjustments you would like.' });
+    }
+
+    const newFeedback = {
+      id: 'fb_' + Math.random().toString(36).substring(2, 9),
+      name: (name || 'Client Reviewer').trim(),
+      notes: notes.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    const existingFeedback = Array.isArray(lead.clientFeedback) ? lead.clientFeedback : [];
+    const updated = db.updateLead(lead.id, {
+      clientFeedback: [...existingFeedback, newFeedback]
+    });
+
+    try {
+      db.logActivity({
+        staffId: 'system',
+        staffName: 'Client Review Portal',
+        action: 'edit',
+        description: `Client adjustments from ${newFeedback.name}: "${newFeedback.notes.substring(0, 100)}"`,
+        targetType: 'lead',
+        targetId: lead.id,
+        targetName: lead.name
+      });
+    } catch (_) {}
+
+    res.json({ success: true, feedback: newFeedback, total: (lead.clientFeedback?.length || 0) + 1 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Extend demo link for another 48 hours
+app.post('/api/leads/:id/extend-demo', (req, res) => {
+  try {
+    const lead = db.getLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const newExpires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    const updated = db.updateLead(lead.id, {
+      demoExpiresAt: newExpires
+    });
+
+    res.json({ success: true, demoExpiresAt: newExpires, lead: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

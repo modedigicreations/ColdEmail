@@ -4,7 +4,27 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_FILE = path.join(process.cwd(), 'db.json');
+
+function getDbFilePath(): string {
+  const candidates = [
+    path.join(__dirname, 'db.json'),
+    path.join(process.cwd(), 'server', 'db.json'),
+    path.join(process.cwd(), 'db.json')
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return candidates[0];
+}
+
+const DB_FILE = getDbFilePath();
+
+export interface ClientFeedback {
+  id: string;
+  name: string;
+  notes: string;
+  createdAt: string;
+}
 
 export interface Lead {
   id: string;
@@ -23,6 +43,11 @@ export interface Lead {
   subdomain?: string;
   demoSiteUrl?: string;
   demoSiteHtml?: string;
+  demoCreatedAt?: string;
+  demoExpiresAt?: string;
+  demoViewCount?: number;
+  lastViewedAt?: string;
+  clientFeedback?: ClientFeedback[];
   siteStatus?: 'not_started' | 'subdomain_created' | 'building' | 'deployed' | 'failed';
   emailDraft?: string;
   status: 'not_started' | 'crawled' | 'site_ready' | 'drafted' | 'sending' | 'sent' | 'failed';
@@ -422,6 +447,17 @@ class Database {
       const tempFile = `${DB_FILE}.tmp.${Date.now()}`;
       fs.writeFileSync(tempFile, JSON.stringify(this.data, null, 2), 'utf-8');
       fs.renameSync(tempFile, DB_FILE);
+      // Also mirror to secondary location for resilience
+      const mirrorPaths = [
+        path.join(__dirname, 'db.json'),
+        path.join(process.cwd(), 'server', 'db.json'),
+        path.join(process.cwd(), 'db.json')
+      ];
+      for (const m of mirrorPaths) {
+        if (m !== DB_FILE && fs.existsSync(path.dirname(m))) {
+          try { fs.writeFileSync(m, JSON.stringify(this.data, null, 2), 'utf-8'); } catch (_) {}
+        }
+      }
     } catch (e) {
       console.error('Failed to save database atomically, attempting direct save', e);
       try {

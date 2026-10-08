@@ -161,8 +161,11 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-purple-600 selection:text-white">
   <!-- Top Notification Ribbon -->
-  <div class="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 text-xs py-2 px-4 text-center font-medium border-b border-purple-500/20">
-    ⚡ Concept Redesign Preview prepared specifically for <strong class="text-purple-300">${businessName}</strong> • Ultra-Fast, Mobile-First UX
+  <div class="bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 text-xs py-2.5 px-4 text-center font-medium border-b border-purple-500/20 text-white flex flex-wrap items-center justify-center gap-3">
+    <span>⚡ <strong>Concept Redesign Preview</strong> for <strong class="text-purple-300">${businessName}</strong> • Active for <strong>48 Hours</strong> to review & request adjustments</span>
+    <a href="#client-adjustments" class="inline-flex items-center bg-purple-600 hover:bg-purple-500 text-white font-semibold px-3 py-1 rounded-full text-xs shadow transition">
+      Request Adjustments ✏️
+    </a>
   </div>
 
   <!-- Header / Navigation -->
@@ -322,6 +325,72 @@ export function generateFallbackTemplate(lead: Lead, baseDomain: string): string
     </div>
   </section>
 
+  <!-- Client Review Period & Adjustment Request Section -->
+  <section id="client-adjustments" class="py-20 bg-slate-900/90 border-t border-purple-500/30 relative">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300 text-xs font-semibold uppercase tracking-wider mb-4">
+        ⏱ 48-Hour Client Review Period Active
+      </div>
+      <h2 class="text-3xl sm:text-4xl font-extrabold text-white">Request Adjustments For Your Final Website</h2>
+      <p class="text-slate-400 mt-3 text-sm sm:text-base leading-relaxed">
+        We built this interactive demonstration to show the speed, layout, and conversion potential for <strong>${businessName}</strong>. 
+        Have adjustments to text, services, colors, or images before we build your official live site? Submit your notes below.
+      </p>
+
+      <div class="mt-10 p-6 sm:p-8 rounded-2xl bg-slate-950 border border-slate-800 text-left shadow-2xl">
+        <form id="adjustment-form" onsubmit="handleAdjustmentSubmit(event)">
+          <div class="mb-5">
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Your Name & Role</label>
+            <input type="text" id="adj-name" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="e.g. Sarah Mitchell, Director">
+          </div>
+          <div class="mb-5">
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Requested Adjustments & Notes</label>
+            <textarea id="adj-notes" rows="4" required class="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="e.g. Please update our phone number, add an emergency callout section, feature our warranty guarantee, tweak colors to our brand blue..."></textarea>
+          </div>
+          <button type="submit" id="adj-btn" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 font-bold py-3.5 rounded-xl text-white text-sm shadow-lg shadow-purple-600/30 transition">
+            Send Adjustments to Design Team
+          </button>
+          <div id="adj-alert" class="mt-4 p-4 rounded-xl text-xs font-medium text-center hidden"></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    async function handleAdjustmentSubmit(e) {
+      e.preventDefault();
+      var btn = document.getElementById('adj-btn');
+      var alertBox = document.getElementById('adj-alert');
+      var name = document.getElementById('adj-name').value;
+      var notes = document.getElementById('adj-notes').value;
+
+      btn.disabled = true;
+      btn.innerText = 'Submitting Adjustments...';
+
+      try {
+        var res = await fetch('/api/leads/${lead.id}/demo-feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, notes: notes })
+        });
+        var data = await res.json();
+        if (data.success) {
+          alertBox.className = 'mt-4 p-4 rounded-xl text-xs font-medium text-center bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 block';
+          alertBox.innerText = '✓ Thank you! Your adjustments have been submitted directly to our design team. We will apply them to your final production website.';
+          document.getElementById('adjustment-form').reset();
+        } else {
+          throw new Error(data.error || 'Submission failed');
+        }
+      } catch (err) {
+        alertBox.className = 'mt-4 p-4 rounded-xl text-xs font-medium text-center bg-red-500/10 border border-red-500/30 text-red-300 block';
+        alertBox.innerText = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Send Adjustments to Design Team';
+      }
+    }
+  </script>
+
   <!-- Footer -->
   <footer class="border-t border-slate-900 py-10 text-center text-slate-500 text-xs">
     <div class="max-w-7xl mx-auto px-6">
@@ -360,7 +429,7 @@ CRITICAL FORMAT & DESIGN RULES:
 2. Styling MUST use Tailwind CSS CDN (<script src="https://cdn.tailwindcss.com"></script>) and Tailwind utility classes directly in elements.
 3. DO NOT write extensive custom CSS in <style> tags (keep any <style> under 30 lines for simple keyframe animations only).
 4. The HTML document MUST be completely generated with all sections fully closed before ending with </body></html>.
-5. Include: sticky navigation header, hero section with compelling CTA, services/features grid, audit fixes proof section, customer testimonials, contact/lead form, and footer.`;
+5. Include: sticky navigation header, hero section with compelling CTA, services/features grid, audit fixes proof section, customer testimonials, contact/lead form, client 48h review notes section, and footer.\n6. Mention in the top banner that this is an interactive 48-hour live preview concept for the client to review and suggest adjustments before their official website is finalized.`;
 
   const systemPrompt = settings.websitePromptTemplate?.trim() || defaultSystemPrompt;
 

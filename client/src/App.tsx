@@ -44,6 +44,11 @@ interface Lead {
   subdomain?: string;
   demoSiteUrl?: string;
   demoSiteHtml?: string;
+  demoCreatedAt?: string;
+  demoExpiresAt?: string;
+  demoViewCount?: number;
+  lastViewedAt?: string;
+  clientFeedback?: { id: string; name: string; notes: string; createdAt: string }[];
   siteStatus?: 'not_started' | 'subdomain_created' | 'building' | 'deployed' | 'failed';
   emailDraft?: string;
   status: 'not_started' | 'crawled' | 'site_ready' | 'drafted' | 'sending' | 'sent' | 'failed';
@@ -868,6 +873,23 @@ export default function App() {
       fetchLeads();
     } finally {
       setIsBuildingSiteId(null);
+    }
+  };
+
+  // Extend 48-hour demo website window
+  const extendLeadDemo = async (id: string) => {
+    try {
+      showMsg('Extending preview window for 48 hours...', 'success');
+      const res = await fetch(`${API_BASE}/leads/${id}/extend-demo`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error('Failed to extend preview');
+      const data = await res.json();
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, demoExpiresAt: data.demoExpiresAt } : l));
+      showMsg('Preview link active for another 48 hours!', 'success');
+      fetchLeads();
+    } catch (e: any) {
+      showMsg(e.message, 'error');
     }
   };
 
@@ -2772,24 +2794,67 @@ export default function App() {
                     />
                   </div>
                   {selectedLead.demoSiteUrl && (
-                    <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
-                      <div>
-                        <strong>Temporary Preview Link:</strong>{' '}
-                        <a href={selectedLead.demoSiteUrl} target="_blank" rel="noreferrer" style={{ color: '#c084fc', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
-                          {selectedLead.subdomain || 'preview'} <ExternalLink size={12} />
-                        </a>
-                      </div>
-                      {selectedLead.demoSiteHtml && (
+                    <div style={{ marginTop: '10px', padding: '12px', background: 'rgba(192, 132, 252, 0.05)', border: '1px solid rgba(192, 132, 252, 0.2)', borderRadius: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                         <div>
-                          <a 
-                            href={`${API_BASE.replace(/\/api$/, '')}/demo/${selectedLead.id}`} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            style={{ color: 'var(--info)', fontSize: '11px', textDecoration: 'none', background: 'rgba(56, 189, 248, 0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            title="Direct link works immediately even if DNS is still propagating"
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#c084fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            48-Hour Live Preview Link
+                          </span>
+                          <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                            <a href={selectedLead.demoSiteUrl} target="_blank" rel="noreferrer" style={{ color: '#fff', fontWeight: 600, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
+                              {selectedLead.subdomain || 'preview'} <ExternalLink size={12} color="#c084fc" />
+                            </a>
+                            <span style={{ fontSize: '10px', background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', padding: '2px 8px', borderRadius: '999px', fontWeight: 600 }}>
+                              Active (48h)
+                            </span>
+                            {selectedLead.demoViewCount !== undefined && (
+                              <span style={{ fontSize: '11px', color: '#94a3b8' }} title="Total times client opened preview">
+                                👁 {selectedLead.demoViewCount} {selectedLead.demoViewCount === 1 ? 'view' : 'views'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => extendLeadDemo(selectedLead.id)}
+                            style={{ fontSize: '11px', padding: '4px 10px', height: 'auto', borderColor: '#c084fc', color: '#c084fc' }}
+                            title="Extend preview window for an additional 48 hours"
                           >
-                            Direct Server Link <ExternalLink size={10} />
-                          </a>
+                            Extend 48h ⏱
+                          </button>
+                          {selectedLead.demoSiteHtml && (
+                            <a 
+                              href={`${API_BASE.replace(/\/api$/, '')}/demo/${selectedLead.id}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              style={{ color: 'var(--info)', fontSize: '11px', textDecoration: 'none', background: 'rgba(56, 189, 248, 0.1)', padding: '4px 8px', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.2)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Direct server link (works immediately even if DNS is propagating)"
+                            >
+                              Direct Link <ExternalLink size={10} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Display Client Adjustments if submitted by lead */}
+                      {selectedLead.clientFeedback && selectedLead.clientFeedback.length > 0 && (
+                        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(192, 132, 252, 0.15)' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            📝 Client Adjustments Received ({selectedLead.clientFeedback.length}):
+                          </div>
+                          <div style={{ marginTop: '6px', maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {selectedLead.clientFeedback.map((fb, idx) => (
+                              <div key={idx} style={{ background: 'rgba(15, 23, 42, 0.8)', padding: '8px 10px', borderRadius: '8px', fontSize: '11px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '10px', marginBottom: '2px' }}>
+                                  <strong style={{ color: '#f1f5f9' }}>{fb.name}</strong>
+                                  <span>{new Date(fb.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(fb.createdAt).toLocaleDateString()}</span>
+                                </div>
+                                <div style={{ color: '#e2e8f0', lineHeight: 1.4 }}>{fb.notes}</div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
