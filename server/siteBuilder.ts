@@ -60,6 +60,194 @@ export function getLeadDisplayName(lead: Lead): string {
   return name;
 }
 
+/**
+ * Injects a top 48-hour review ribbon, a guaranteed footer (if missing), and a floating
+ * adjustment request button + modal into any preview HTML document.
+ * This ensures the client ALWAYS has access to the review/adjustment portal from anywhere on the page,
+ * even if the AI stopped before generating its own footer.
+ */
+export function injectClientReviewPortal(html: string, lead: Lead): string {
+  if (!html || typeof html !== "string") return html;
+
+  const businessName = getLeadDisplayName(lead);
+  let processed = html;
+
+  // 1. Clean dangling unclosed tags at the end of the body (e.g. `<section id="`)
+  const bodyEndIdx = processed.lastIndexOf("</body>");
+  if (bodyEndIdx !== -1) {
+    let beforeBody = processed.substring(0, bodyEndIdx).trim();
+    // Strip trailing incomplete tags like `<section id="` or `<div class="`
+    beforeBody = beforeBody.replace(/<[a-z0-9_-]+[^>]*$/i, "").trim();
+    // Strip trailing incomplete comments
+    beforeBody = beforeBody.replace(/<!--[^\r\n]*-->\s*$/i, "").trim();
+
+    // 2. If no footer exists in the body, append a clean guaranteed footer
+    if (!beforeBody.toLowerCase().includes("<footer")) {
+      const footerHtml = `
+  <!-- Mode Guaranteed Complete Footer -->
+  <footer style="background: #020617; border-top: 1px solid rgba(255,255,255,0.1); padding: 50px 20px; text-align: center; color: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <div style="max-width: 720px; margin: 0 auto;">
+      <h3 style="color: #ffffff; font-size: 22px; font-weight: 800; margin-bottom: 8px;">${businessName}</h3>
+      <p style="font-size: 13px; color: #64748b; margin-bottom: 24px;">48-Hour Demonstration Concept Redesign by Mode Webhost & Digital Creations.</p>
+      <button type="button" onclick="window.modeOpenAdjustmentModal()" style="cursor: pointer; background: linear-gradient(135deg, #9333ea, #6366f1); color: #ffffff; border: none; padding: 14px 28px; border-radius: 14px; font-weight: 700; font-size: 14px; box-shadow: 0 4px 16px rgba(147, 51, 234, 0.4); display: inline-flex; align-items: center; gap: 8px; transition: transform 0.2s;">
+        <span>✏️</span> Request Adjustments For Final Production Site
+      </button>
+    </div>
+  </footer>`;
+      beforeBody += "\n" + footerHtml;
+    }
+
+    // 3. Inject Floating Button, Modal, and JavaScript before </body>
+    const modalHtml = `
+  <!-- Mode Floating Adjustment Button (Always visible on mobile & desktop) -->
+  <div id="mode-floating-review-btn" style="position: fixed; bottom: 20px; right: 20px; z-index: 999991; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <button type="button" onclick="window.modeOpenAdjustmentModal()" style="cursor: pointer; background: linear-gradient(135deg, #9333ea, #6366f1); color: #ffffff; border: 1px solid rgba(255,255,255,0.25); padding: 12px 20px; border-radius: 999px; font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(147, 51, 234, 0.5); transition: transform 0.2s, box-shadow 0.2s;">
+      <span style="font-size: 16px;">✏️</span> Request Adjustments (48h Review)
+    </button>
+  </div>
+
+  <!-- Mode Interactive Adjustment Modal -->
+  <div id="mode-adjustment-modal" style="display: none; position: fixed; inset: 0; z-index: 999999; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <div style="background: #0f172a; border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 24px; max-width: 520px; width: 100%; padding: 28px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8); position: relative; color: #f8fafc; box-sizing: border-box;">
+      
+      <button type="button" onclick="window.modeCloseAdjustmentModal()" style="position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.1); border: none; color: #94a3b8; width: 32px; height: 32px; border-radius: 999px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+        ✕
+      </button>
+
+      <div style="text-align: center; margin-bottom: 20px;">
+        <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #c084fc; background: rgba(192, 132, 252, 0.1); border: 1px solid rgba(192, 132, 252, 0.2); padding: 4px 12px; border-radius: 999px;">
+          ⏱ 48-Hour Review Active
+        </span>
+        <h2 style="font-size: 22px; font-weight: 800; color: #ffffff; margin-top: 10px; margin-bottom: 6px;">
+          Request Adjustments
+        </h2>
+        <p style="font-size: 13px; color: #94a3b8; line-height: 1.5; margin: 0;">
+          Reviewing for <strong style="color: #ffffff;">${businessName}</strong>? Describe any adjustments (text, colors, phone, services, images) before your official website is finalized.
+        </p>
+      </div>
+
+      <form id="mode-adjustment-form" onsubmit="window.modeSubmitAdjustment(event)">
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #cbd5e1; margin-bottom: 6px;">Your Name / Title</label>
+          <input type="text" id="mode-adj-name" required placeholder="e.g. John Doe, Owner" style="width: 100%; box-sizing: border-box; background: #020617; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; color: #ffffff; font-size: 13px; outline: none;">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #cbd5e1; margin-bottom: 6px;">Your Contact Phone or Email</label>
+          <input type="text" id="mode-adj-contact" placeholder="e.g. 07911 123456 / owner@business.co.uk" style="width: 100%; box-sizing: border-box; background: #020617; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; color: #ffffff; font-size: 13px; outline: none;">
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #cbd5e1; margin-bottom: 6px;">Requested Adjustments & Notes</label>
+          <textarea id="mode-adj-notes" rows="4" required placeholder="Describe any updates you want (e.g. change phone number to..., add our 24/7 emergency service, update brand colors to navy blue)..." style="width: 100%; box-sizing: border-box; background: #020617; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; color: #ffffff; font-size: 13px; outline: none; line-height: 1.5;"></textarea>
+        </div>
+
+        <button type="submit" id="mode-adj-submit-btn" style="width: 100%; box-sizing: border-box; cursor: pointer; background: linear-gradient(135deg, #9333ea, #6366f1); border: none; color: #ffffff; font-weight: 700; font-size: 14px; padding: 14px; border-radius: 14px; box-shadow: 0 4px 14px rgba(147, 51, 234, 0.4);">
+          Submit Adjustments to Web Team
+        </button>
+
+        <div id="mode-adj-status" style="display: none; margin-top: 12px; padding: 10px; border-radius: 10px; font-size: 12px; text-align: center; font-weight: 600;"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    window.modeOpenAdjustmentModal = function() {
+      var modal = document.getElementById('mode-adjustment-modal');
+      if (modal) {
+        modal.style.display = 'flex';
+        var input = document.getElementById('mode-adj-name');
+        if (input) input.focus();
+      }
+    };
+
+    window.modeCloseAdjustmentModal = function() {
+      var modal = document.getElementById('mode-adjustment-modal');
+      if (modal) modal.style.display = 'none';
+    };
+
+    window.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') window.modeCloseAdjustmentModal();
+    });
+
+    document.addEventListener('click', function(e) {
+      var modal = document.getElementById('mode-adjustment-modal');
+      if (e.target === modal) window.modeCloseAdjustmentModal();
+    });
+
+    window.modeSubmitAdjustment = async function(e) {
+      e.preventDefault();
+      var btn = document.getElementById('mode-adj-submit-btn');
+      var status = document.getElementById('mode-adj-status');
+      var name = document.getElementById('mode-adj-name').value;
+      var contact = document.getElementById('mode-adj-contact').value;
+      var notes = document.getElementById('mode-adj-notes').value;
+
+      btn.disabled = true;
+      btn.innerText = 'Submitting Adjustments...';
+
+      var fullNotes = notes;
+      if (contact && contact.trim()) {
+        fullNotes = notes + ' (Contact: ' + contact.trim() + ')';
+      }
+
+      try {
+        var res = await fetch('/api/leads/${lead.id}/demo-feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, notes: fullNotes })
+        });
+        var data = await res.json();
+        if (data.success) {
+          status.style.display = 'block';
+          status.style.background = 'rgba(16, 185, 129, 0.15)';
+          status.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          status.style.color = '#34d399';
+          status.innerText = '✓ Thank you! Your adjustments have been submitted to our design team. We will apply them to your final production website.';
+          document.getElementById('mode-adjustment-form').reset();
+          setTimeout(function() {
+            window.modeCloseAdjustmentModal();
+          }, 3500);
+        } else {
+          throw new Error(data.error || 'Submission failed');
+        }
+      } catch (err) {
+        status.style.display = 'block';
+        status.style.background = 'rgba(239, 68, 68, 0.15)';
+        status.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        status.style.color = '#f87171';
+        status.innerText = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Submit Adjustments to Web Team';
+      }
+    };
+  </script>`;
+
+    processed = beforeBody + "\n" + modalHtml + "\n" + processed.substring(bodyEndIdx);
+  }
+
+  // 4. Inject Sticky Top Ribbon directly after <body...>
+  const bodyOpenMatch = processed.match(/<body\b[^>]*>/i);
+  if (bodyOpenMatch && !processed.includes("id=\"mode-demo-top-banner\"")) {
+    const insertIdx = (bodyOpenMatch.index || 0) + bodyOpenMatch[0].length;
+    const topRibbonHtml = `
+  <!-- Mode Sticky 48h Review Top Ribbon -->
+  <div id="mode-demo-top-banner" style="position: sticky; top: 0; left: 0; right: 0; width: 100%; z-index: 999990; background: linear-gradient(90deg, #3b0764 0%, #1e1b4b 50%, #0f172a 100%); border-bottom: 1px solid rgba(168, 85, 247, 0.4); padding: 10px 16px; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+    <span style="display: inline-flex; align-items: center; gap: 6px;">
+      <span>⚡</span> <strong>Concept Redesign Preview</strong> for <strong style="color: #d8b4fe;">${businessName}</strong> • Active for <strong>48 Hours</strong>
+    </span>
+    <button type="button" onclick="window.modeOpenAdjustmentModal()" style="cursor: pointer; background: #9333ea; color: #ffffff; border: none; padding: 6px 16px; border-radius: 999px; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 10px rgba(147, 51, 234, 0.5); transition: all 0.2s;">
+      <span>✏️</span> Request Adjustments
+    </button>
+  </div>`;
+    processed = processed.substring(0, insertIdx) + "\n" + topRibbonHtml + "\n" + processed.substring(insertIdx);
+  }
+
+  return processed;
+}
+
+
 export function sanitizeHtmlOutput(raw: string): string | null {
   if (!raw || typeof raw !== "string") return null;
   let cleaned = raw.trim();

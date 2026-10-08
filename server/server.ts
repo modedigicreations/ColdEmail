@@ -13,7 +13,7 @@ import { sendColdEmail } from './gmail.js';
 import { sanitizePhoneNumberForWhatsApp, getWhatsAppOutreachUrl } from './whatsapp.js';
 import { createLeadSubdomain, deployLeadWebsite } from './hosting/manager.js';
 import { getSitesDir } from './hosting/wildcardAdapter.js';
-import { generateWebsiteHtml, isValidWebsiteHtml, generateFallbackTemplate, getLeadDisplayName } from './siteBuilder.js';
+import { generateWebsiteHtml, isValidWebsiteHtml, generateFallbackTemplate, getLeadDisplayName, injectClientReviewPortal } from './siteBuilder.js';
 import { getLeadPreviewUrl, sanitizeDemoUrl, getPreviewBaseUrl } from './previewUrl.js';
 
 import fs from 'fs';
@@ -233,7 +233,7 @@ app.use((req, res, next) => {
     if (html) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.removeHeader('X-Frame-Options');
-      return res.send(html);
+      return res.send(lead ? injectClientReviewPortal(html, lead) : html);
     }
   }
 
@@ -881,7 +881,7 @@ app.get('/api/leads/:id/site-preview', (req, res) => {
       } catch (err: any) {}
     }
 
-    return res.send(html);
+    return res.send(lead ? injectClientReviewPortal(html, lead) : html);
   } catch (error: any) {
     res.status(500).send(`Preview error: ${error.message}`);
   }
@@ -1000,7 +1000,7 @@ app.get('/demo/:subdomainOrId', (req, res) => {
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.removeHeader('X-Frame-Options');
-    return res.send(html);
+    return res.send(lead ? injectClientReviewPortal(html, lead) : html);
   } catch (err: any) {
     res.status(500).send(`Demo error: ${err.message}`);
   }

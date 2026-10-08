@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { isValidWebsiteHtml, sanitizeHtmlOutput, generateFallbackTemplate, getLeadDisplayName } from "./siteBuilder.js";
+import { isValidWebsiteHtml, sanitizeHtmlOutput, generateFallbackTemplate, getLeadDisplayName, injectClientReviewPortal } from "./siteBuilder.js";
 import { Lead } from "./db.js";
 
 test("isValidWebsiteHtml rejects null, undefined and short strings", () => {
@@ -120,4 +120,32 @@ test("generateFallbackTemplate includes 48-hour preview notice and client adjust
   assert.ok(html.includes("client-adjustments"), "Must have client adjustments section");
   assert.ok(html.includes("handleAdjustmentSubmit"), "Must have adjustment submission handler");
   assert.strictEqual(isValidWebsiteHtml(html), true);
+});
+
+test("injectClientReviewPortal injects top ribbon, floating button, modal, and guaranteed footer on truncated HTML", () => {
+  const truncatedHtml = `<!DOCTYPE html>
+<html>
+<head><title>Aerial Pro</title></head>
+<body>
+  <header><h1>Aerial Pro</h1></header>
+  <main><p>Services</p></main>
+  <!-- Incomplete section -->
+  <section id="
+</body>
+</html>`;
+
+  const lead: Lead = {
+    id: "lead_aerial_test",
+    name: "TV Aerial Pro",
+    status: "site_ready"
+  };
+
+  const injected = injectClientReviewPortal(truncatedHtml, lead);
+
+  assert.ok(injected.includes("mode-demo-top-banner"), "Must inject sticky top ribbon");
+  assert.ok(injected.includes("mode-floating-review-btn"), "Must inject floating review button");
+  assert.ok(injected.includes("mode-adjustment-modal"), "Must inject interactive adjustment modal");
+  assert.ok(injected.includes("Mode Guaranteed Complete Footer"), "Must inject guaranteed footer when missing");
+  assert.ok(!injected.includes("<section id=\"\\n"), "Must strip dangling unclosed section tag");
+  assert.ok(injected.includes("TV Aerial Pro"), "Must include business name in banner and modal");
 });
